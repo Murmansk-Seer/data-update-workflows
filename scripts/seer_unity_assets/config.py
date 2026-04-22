@@ -21,6 +21,7 @@ CONFIG = {
             "*assets_art_ui_assets_countermark*",
             "*assets_art_ui_assets_item*",
             "*art_ui_achieve*",
+            "*art_ui_assets_achieve_icon*",
             "*art_ui_item_cloth_prev*",
             "*art_ui_expression*",
             "*art_autocard_texture_cards*",
