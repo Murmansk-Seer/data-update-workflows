@@ -27,6 +27,7 @@ CONFIG = {
             "*art_ui_fitment*",
             "*art_ui_nono*",
             "*art_ui_item_*",
+            "*art_ui_soulbead*",
             "*art_ui_countermark_*",
             "*art_ui_achieve*",
             "*art_autocard_texture_cards*",
