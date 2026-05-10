@@ -8,7 +8,7 @@ dependencies = [
     "albi0>=0.5.3",
     "gitpython>=3.1.45",
     "pytz>=2025.2",
-    "seerapi-solaris=*",
+    "seerapi-solaris",
     "xmltodict>=1.0.2",
 ]
 
