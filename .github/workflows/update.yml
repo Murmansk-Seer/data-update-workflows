@@ -8,16 +8,22 @@ on:
     inputs:
       force-update-assets:
         type: boolean
-        description: "force-update-assets"
+        description: "强制更新 seer-unity-assets (ConfigPackage, DefaultPackage)"
+        required: false
+        default: false
+      force-update-pet-assets:
+        type: boolean
+        description: "强制更新 seer-unity-assets-pet_anim_part (PetAnimPackage)"
         required: false
         default: false
       force-update-config:
         type: boolean
-        description: "force-update-config"
+        description: "强制更新 config-sources"
         required: false
         default: false
 env:
   UNITY_ASSETS_REPO: "SeerAPI/seer-unity-assets"
+  PET_ANIM_REPO: "SeerAPI/seer-unity-assets-pet_anim_part"
   CONFIG_SOURCE_REPO: "SeerAPI/config-sources"
   TQDM_MININTERVAL: 5
 
@@ -29,7 +35,7 @@ jobs:
   update-unity-assets:
     runs-on: ubuntu-latest
     outputs:
-      has_update: ${{ steps.update.outputs.has_update }}
+      has_update: ${{ steps.update-main.outputs.has_update == 'true' || steps.update-pet.outputs.has_update == 'true' }}
 
     steps:
       - name: Delete workflow runs
@@ -53,13 +59,13 @@ jobs:
         id: check-update
         run: |
           echo "🚀 开始检查更新..."
-          uv run check-seer-assets ${{ env.UNITY_ASSETS_REPO }} main
+          uv run check-seer-assets main
           echo "✅ 检查更新完成"
 
-      - name: 检出仓库
-        id: checkout-repo
+      - name: 检出 seer-unity-assets
+        id: checkout-main-repo
         uses: ./.github/actions/checkout-repo
-        if: ${{ steps.check-update.outputs.need_update == 'true' || inputs.force-update-assets }}
+        if: ${{ steps.check-update.outputs.need_update_main == 'true' || inputs.force-update-assets }}
         with:
           ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
           repository: ${{ env.UNITY_ASSETS_REPO }}
@@ -68,13 +74,39 @@ jobs:
           fetch-depth: 1
 
       - name: 更新 seer-unity-assets
-        id: update
-        working-directory: ${{ steps.checkout-repo.outputs.repo-path }}
-        if: ${{ steps.check-update.outputs.need_update == 'true' || inputs.force-update-assets }}
+        id: update-main
+        working-directory: seer-unity-assets
+        if: ${{ steps.check-update.outputs.need_update_main == 'true' || inputs.force-update-assets }}
         run: |
-          echo "🚀 开始处理数据..."
-          uv run update-seer-assets ${{ inputs.force-update-assets && '--force' || '' }}
-          echo "✅ 数据处理完成"
+          echo "🚀 开始处理 seer-unity-assets 数据..."
+          uv run update-seer-assets \
+            --repo-path . \
+            --packages ConfigPackage,DefaultPackage \
+            ${{ inputs.force-update-assets && '--force' || '' }}
+          echo "✅ seer-unity-assets 数据处理完成"
+
+      - name: 检出 seer-unity-assets-pet_anim_part
+        id: checkout-pet-repo
+        uses: ./.github/actions/checkout-repo
+        if: ${{ steps.check-update.outputs.need_update_pet == 'true' || inputs.force-update-pet-assets }}
+        with:
+          repository: ${{ env.PET_ANIM_REPO }}
+          path: "seer-unity-assets-pet_anim_part"
+          token: ${{ secrets.PAT }}
+          fetch-depth: 1
+          init-if-empty: "true"
+
+      - name: 更新 seer-unity-assets-pet_anim_part
+        id: update-pet
+        working-directory: seer-unity-assets-pet_anim_part
+        if: ${{ steps.check-update.outputs.need_update_pet == 'true' || inputs.force-update-pet-assets }}
+        run: |
+          echo "🚀 开始处理 pet_anim 数据..."
+          uv run update-seer-assets \
+            --repo-path . \
+            --packages PetAnimPackage \
+            ${{ inputs.force-update-pet-assets && '--force' || '' }}
+          echo "✅ pet_anim 数据处理完成"
 
   update-config-sources:
     runs-on: ubuntu-latest

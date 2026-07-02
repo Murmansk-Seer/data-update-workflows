@@ -42,6 +42,11 @@ inputs:
     required: false
     default: 'github-actions[bot]@users.noreply.github.com'
 
+  init-if-empty:
+    description: '仓库为空时自动初始化并推送初始提交'
+    required: false
+    default: 'false'
+
 outputs:
   repo-path:
     description: '仓库的本地路径'
@@ -51,7 +56,9 @@ runs:
   using: 'composite'
   steps:
     - name: 检出仓库
+      id: checkout
       uses: actions/checkout@v4
+      continue-on-error: ${{ inputs.init-if-empty == 'true' }}
       with:
         repository: ${{ inputs.repository }}
         path: ${{ inputs.path }}
@@ -59,7 +66,24 @@ runs:
         token: ${{ inputs.token }}
         fetch-depth: ${{ inputs.fetch-depth }}
         ref: ${{ inputs.branch }}
-    
+
+    - name: 初始化空仓库
+      if: inputs.init-if-empty == 'true' && steps.checkout.outcome == 'failure'
+      shell: bash
+      env:
+        REPO_URL: https://x-access-token:${{ inputs.token }}@github.com/${{ inputs.repository }}.git
+      run: |
+        echo "📦 仓库为空，正在初始化..."
+        mkdir -p "${{ inputs.path }}"
+        cd "${{ inputs.path }}"
+        git init
+        git config user.name "${{ inputs.username }}"
+        git config user.email "${{ inputs.email }}"
+        git remote add origin "$REPO_URL"
+        git checkout -b "${{ inputs.branch }}"
+        git commit --allow-empty -m "chore: initialize repository"
+        git push -u origin "${{ inputs.branch }}"
+
     - name: 配置 Git 用户
       shell: bash
       working-directory: ${{ inputs.path }}
