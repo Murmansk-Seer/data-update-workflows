@@ -90,6 +90,7 @@ jobs:
         uses: ./.github/actions/checkout-repo
         if: ${{ steps.check-update.outputs.need_update_pet == 'true' || inputs.force-update-pet-assets }}
         with:
+          ssh-key: ${{ secrets.ANIM_REPO_SSH_PRIVATE_KEY }}
           repository: ${{ env.PET_ANIM_REPO }}
           path: "seer-unity-assets-pet_anim_part"
           token: ${{ secrets.PAT }}
