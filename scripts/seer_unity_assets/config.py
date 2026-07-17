@@ -1,7 +1,6 @@
 from typing_extensions import NotRequired, TypedDict
 
-UNITY_ASSETS_REPO = "SeerAPI/seer-unity-assets"
-PET_ANIM_REPO = "SeerAPI/seer-unity-assets-pet_anim_part"
+UNITY_ASSETS_REPO = "Murmansk-Seer/seer-unity-assets"
 
 
 class PackageConfig(TypedDict):
@@ -11,7 +10,6 @@ class PackageConfig(TypedDict):
     skip_extract: bool
     min_size: NotRequired[str | int]
     max_size: NotRequired[str | int]
-    target_repo: NotRequired[str]
     push_patterns: NotRequired[list[str]]
 
 
@@ -53,14 +51,5 @@ CONFIG: dict[str, PackageConfig] = {
             "*art_autocard_texture_minipet*",
         ],
         "skip_extract": False,
-    },
-    "PetAnimPackage": {
-        "updater_name": "newseer.pet",
-        "extractor_name": "newseer",
-        "update_args": [],
-        "min_size": "5M",
-        "skip_extract": True,
-        "target_repo": PET_ANIM_REPO,
-        "push_patterns": ["newseer/", "package-manifests/"],
     },
 }

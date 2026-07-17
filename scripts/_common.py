@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from datetime import datetime
 import functools
 from pathlib import Path
+import time
 from typing import Any, Callable, Optional, ParamSpec, TypeVar
 from git import Repo
 from git.exc import GitCommandError
@@ -319,11 +320,11 @@ def retry(
                     except exceptions as e:
                         last_exception = e
                         if i == max_retries:
-                            logger.error(
+                            print(
                                 f"达到最大重试次数 ({max_retries})，最后一次错误: {e}"
                             )
                             raise
-                        logger.warning(
+                        print(
                             f"请求失败: {e}，正在进行第 {i + 1} 次重试，等待 {delay:.2f}s..."
                         )
                         time.sleep(delay)

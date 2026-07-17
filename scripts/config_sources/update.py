@@ -34,7 +34,7 @@ HTML5_BASE_URL = "https://seerh5.61.com"
 HTML5_VERSION_CHECK_URL = (
     f"{HTML5_BASE_URL}/version/version.json?t={random.uniform(0.01, 0.09)}"
 )
-UNITY_VERSION_CHECK_URL = "https://raw.githubusercontent.com/SeerAPI/seer-unity-assets/refs/heads/main/package-manifests/ConfigPackage.json"
+UNITY_VERSION_CHECK_URL = "https://raw.githubusercontent.com/Murmansk-Seer/seer-unity-assets/main/package-manifests/ConfigPackage.json"
 
 
 def get_file_hash(data: bytes) -> str:
@@ -322,6 +322,7 @@ class Unity(Platform):
 
 async def run(*, force: bool = False) -> None:
     manager = DataRepoManager.from_checkout(".")
+    has_update = False
     platforms: list[tuple[str, Platform]] = [
         ("flash", Flash(Path("flash"))),
         ("html5", HTML5(Path("html5"))),
@@ -341,13 +342,18 @@ async def run(*, force: bool = False) -> None:
         print(f"{platform.work_dir} 更新中...")
         await platform.get_configs()
         platform.save_remote_version()
-        manager.commit(
+        if manager.commit(
             f"{name}: Update to {remote_version} | Time: {get_current_time_str()}",
             files=[str(platform.work_dir)],
-        )
+        ):
+            has_update = True
 
-    if manager.push():
-        write_to_github_output("has_update", "true")
+    if not has_update:
+        write_to_github_output("has_update", "false")
+        return
+    if not manager.push():
+        raise RuntimeError("config-sources 更新已提交，但推送远端失败")
+    write_to_github_output("has_update", "true")
 
 
 def main() -> None:

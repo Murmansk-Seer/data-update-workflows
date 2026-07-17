@@ -11,20 +11,24 @@ on:
         description: "强制更新 seer-unity-assets (ConfigPackage, DefaultPackage)"
         required: false
         default: false
-      force-update-pet-assets:
-        type: boolean
-        description: "强制更新 seer-unity-assets-pet_anim_part (PetAnimPackage)"
-        required: false
-        default: false
       force-update-config:
         type: boolean
         description: "强制更新 config-sources"
         required: false
         default: false
+      dispatch-api-data:
+        type: boolean
+        description: "config-sources 更新后触发 api-data 构建"
+        required: false
+        default: true
+
+concurrency:
+  group: data-update-workflows
+  cancel-in-progress: false
+
 env:
-  UNITY_ASSETS_REPO: "SeerAPI/seer-unity-assets"
-  PET_ANIM_REPO: "SeerAPI/seer-unity-assets-pet_anim_part"
-  CONFIG_SOURCE_REPO: "SeerAPI/config-sources"
+  UNITY_ASSETS_REPO: "Murmansk-Seer/seer-unity-assets"
+  CONFIG_SOURCE_REPO: "Murmansk-Seer/config-sources"
   TQDM_MININTERVAL: 5
 
 permissions:
@@ -35,7 +39,7 @@ jobs:
   update-unity-assets:
     runs-on: ubuntu-latest
     outputs:
-      has_update: ${{ steps.update-main.outputs.has_update == 'true' || steps.update-pet.outputs.has_update == 'true' }}
+      has_update: ${{ steps.update-main.outputs.has_update == 'true' }}
 
     steps:
       - name: Delete workflow runs
@@ -62,15 +66,24 @@ jobs:
           uv run check-seer-assets main
           echo "✅ 检查更新完成"
 
+      - name: 检查跨仓库令牌
+        if: ${{ steps.check-update.outputs.need_update_main == 'true' || inputs.force-update-assets }}
+        env:
+          CROSS_REPO_TOKEN: ${{ secrets.PAT }}
+        run: |
+          if [ -z "${CROSS_REPO_TOKEN}" ]; then
+            echo "::error::缺少仓库 Secret PAT，无法更新 ${UNITY_ASSETS_REPO}"
+            exit 1
+          fi
+
       - name: 检出 seer-unity-assets
         id: checkout-main-repo
         uses: ./.github/actions/checkout-repo
         if: ${{ steps.check-update.outputs.need_update_main == 'true' || inputs.force-update-assets }}
         with:
-          ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
           repository: ${{ env.UNITY_ASSETS_REPO }}
           path: "seer-unity-assets"
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT }}
           fetch-depth: 1
 
       - name: 更新 seer-unity-assets
@@ -84,30 +97,6 @@ jobs:
             --packages ConfigPackage,DefaultPackage \
             ${{ inputs.force-update-assets && '--force' || '' }}
           echo "✅ seer-unity-assets 数据处理完成"
-
-      - name: 检出 seer-unity-assets-pet_anim_part
-        id: checkout-pet-repo
-        uses: ./.github/actions/checkout-repo
-        if: ${{ steps.check-update.outputs.need_update_pet == 'true' || inputs.force-update-pet-assets }}
-        with:
-          ssh-key: ${{ secrets.ANIM_REPO_SSH_PRIVATE_KEY }}
-          repository: ${{ env.PET_ANIM_REPO }}
-          path: "seer-unity-assets-pet_anim_part"
-          token: ${{ secrets.PAT }}
-          fetch-depth: 1
-          init-if-empty: "true"
-
-      - name: 更新 seer-unity-assets-pet_anim_part
-        id: update-pet
-        working-directory: seer-unity-assets-pet_anim_part
-        if: ${{ steps.check-update.outputs.need_update_pet == 'true' || inputs.force-update-pet-assets }}
-        run: |
-          echo "🚀 开始处理 pet_anim 数据..."
-          uv run update-seer-assets \
-            --repo-path . \
-            --packages PetAnimPackage \
-            ${{ inputs.force-update-pet-assets && '--force' || '' }}
-          echo "✅ pet_anim 数据处理完成"
 
   update-config-sources:
     runs-on: ubuntu-latest
@@ -124,11 +113,19 @@ jobs:
           python-version: "3.10"
           install-dependencies: "true"
 
+      - name: 检查跨仓库令牌
+        env:
+          CROSS_REPO_TOKEN: ${{ secrets.PAT }}
+        run: |
+          if [ -z "${CROSS_REPO_TOKEN}" ]; then
+            echo "::error::缺少仓库 Secret PAT，无法更新 ${CONFIG_SOURCE_REPO}"
+            exit 1
+          fi
+
       - name: 检出仓库
         id: checkout-repo
         uses: ./.github/actions/checkout-repo
         with:
-          # ssh-key: ${{ secrets.SSH_PRIVATE_KEY }}
           repository: ${{ env.CONFIG_SOURCE_REPO }}
           path: "config-sources"
           token: ${{ secrets.PAT }}
@@ -144,8 +141,10 @@ jobs:
 
       - name: Repository Dispatch
         uses: peter-evans/repository-dispatch@v4
-        if: steps.update.outputs.has_update == 'true'
+        if: >-
+          steps.update.outputs.has_update == 'true' &&
+          (github.event_name != 'workflow_dispatch' || inputs.dispatch-api-data)
         with:
           token: ${{ secrets.PAT }}
-          repository: seerapi/api-data
+          repository: Murmansk-Seer/api-data
           event-type: config-source-update

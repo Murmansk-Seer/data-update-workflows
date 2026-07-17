@@ -316,7 +316,7 @@ def read_amf3_object(data: bytes) -> Any:
 				decompressed = zlib.decompress(data)
 				reader = AMF3Reader(decompressed)
 				return reader.read_object()
-		except:
+		except Exception:
 			pass
 		
 		# 如果都失败了，返回原始字节数据

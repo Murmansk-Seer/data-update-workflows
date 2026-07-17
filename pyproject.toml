@@ -12,6 +12,12 @@ dependencies = [
     "xmltodict>=1.0.2",
 ]
 
+[dependency-groups]
+dev = [
+    "pyyaml>=6.0.2",
+    "ruff>=0.12.0",
+]
+
 [tool.uv]
 package = true
 
