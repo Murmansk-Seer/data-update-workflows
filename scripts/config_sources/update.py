@@ -1,13 +1,14 @@
 import asyncio
+from abc import ABC, abstractmethod
 import hashlib
 from itertools import chain
 import os
+from pathlib import Path
 import random
 import sys
 from typing import Any, TypeVar
-from abc import ABC, abstractmethod
-from pathlib import Path
 import zlib
+
 from typing_extensions import override
 
 import httpx
@@ -37,6 +38,22 @@ HTML5_VERSION_CHECK_URL = (
     f"{HTML5_BASE_URL}/version/version.json?t={random.uniform(0.01, 0.09)}"
 )
 UNITY_VERSION_CHECK_URL = "https://raw.githubusercontent.com/Murmansk-Seer/seer-unity-assets/main/package-manifests/ConfigPackage.json"
+VERSION_REQUEST_TIMEOUT_SECONDS = 30.0
+VERSION_REQUEST_MAX_RETRIES = 4
+
+
+def get_json_with_retry(url: str) -> dict[str, Any]:
+    response = retry_call(
+        httpx.get,
+        url=url,
+        follow_redirects=True,
+        timeout=VERSION_REQUEST_TIMEOUT_SECONDS,
+        max_retries=VERSION_REQUEST_MAX_RETRIES,
+        base_delay=2.0,
+        max_delay=20.0,
+    )
+    response.raise_for_status()
+    return response.json()
 
 
 def get_file_hash(data: bytes) -> str:
@@ -134,15 +151,8 @@ class Platform(ABC):
             raise FileNotFoundError(f"{self.version_file_path} 不存在")
         return self.version_file_path.read_text().strip()
 
-    def save_remote_version(self) -> None:
-        self.version_file_path.write_text(self.get_remote_version())
-
-    def check_update(self) -> bool:
-        try:
-            local_version = self.get_local_version()
-        except FileNotFoundError:
-            return True
-        return local_version != self.get_remote_version()
+    def save_remote_version(self, remote_version: str) -> None:
+        self.version_file_path.write_text(remote_version)
 
 
 class Flash(Platform):
@@ -254,10 +264,14 @@ async def download_data_async(
 
 
 class HTML5(Platform):
+    def __init__(self, work_dir: Path) -> None:
+        super().__init__(work_dir)
+        self._version_json: dict[str, Any] | None = None
+
     def get_version_json(self) -> dict[str, Any]:
-        response = httpx.get(url=HTML5_VERSION_CHECK_URL)
-        response.raise_for_status()
-        return response.json()
+        if self._version_json is None:
+            self._version_json = get_json_with_retry(HTML5_VERSION_CHECK_URL)
+        return self._version_json
 
     @override
     def get_remote_version(self) -> str:
@@ -296,9 +310,7 @@ class HTML5(Platform):
 class Unity(Platform):
     @override
     def get_remote_version(self) -> str:
-        response = httpx.get(url=UNITY_VERSION_CHECK_URL)
-        response.raise_for_status()
-        return response.json()["version"]
+        return str(get_json_with_retry(UNITY_VERSION_CHECK_URL)["version"])
 
     @override
     async def get_configs(self) -> None:
@@ -327,6 +339,7 @@ class Unity(Platform):
 async def run(*, force: bool = False) -> None:
     manager = DataRepoManager.from_checkout(".")
     has_update = False
+    errors: list[str] = []
     platforms: list[tuple[str, Platform]] = [
         ("flash", Flash(Path("flash"))),
         ("html5", HTML5(Path("html5"))),
@@ -334,30 +347,37 @@ async def run(*, force: bool = False) -> None:
     ]
     for name, platform in platforms:
         try:
-            print(f"当前版本：{platform.get_local_version()}")
-        except FileNotFoundError:
-            print(f"{platform.work_dir} 不存在")
+            try:
+                local_version = platform.get_local_version()
+                print(f"{name} 当前版本：{local_version}")
+            except FileNotFoundError:
+                local_version = None
+                print(f"{platform.work_dir} 不存在")
 
-        remote_version = platform.get_remote_version()
-        if not platform.check_update() and not force:
-            print(f"{platform.work_dir} 已是最新版本")
-            continue
+            remote_version = platform.get_remote_version()
+            if local_version == remote_version and not force:
+                print(f"{platform.work_dir} 已是最新版本")
+                continue
 
-        print(f"{platform.work_dir} 更新中...")
-        await platform.get_configs()
-        platform.save_remote_version()
-        if manager.commit(
-            f"{name}: Update to {remote_version} | Time: {get_current_time_str()}",
-            files=[str(platform.work_dir)],
-        ):
-            has_update = True
+            print(f"{platform.work_dir} 更新中...")
+            await platform.get_configs()
+            platform.save_remote_version(remote_version)
+            if manager.commit(
+                f"{name}: Update to {remote_version} | Time: {get_current_time_str()}",
+                files=[str(platform.work_dir)],
+            ):
+                has_update = True
+        except Exception as exc:  # noqa: BLE001
+            error = f"{name}: {type(exc).__name__}: {exc}"
+            errors.append(error)
+            print(f"❌ {platform.work_dir} 更新失败：{error}")
 
-    if not has_update:
-        write_to_github_output("has_update", "false")
-        return
-    if not manager.push():
+    if has_update and not manager.push():
         raise RuntimeError("config-sources 更新已提交，但推送远端失败")
-    write_to_github_output("has_update", "true")
+    write_to_github_output("has_update", str(has_update).lower())
+
+    if errors:
+        raise RuntimeError("部分配置源更新失败：" + "; ".join(errors))
 
 
 def main() -> None:
