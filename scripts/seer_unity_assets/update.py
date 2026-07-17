@@ -96,14 +96,16 @@ async def run(
             force=force,
         )
         print(f"✅ 资源包 {package_name} 更新完成")
-        if manager.commit_and_push(
+        if not manager.commit(
             f"{package_name}: Update to {remote_version} | Time: {get_current_time_str()}",
             files=get_push_patterns(package_name, config),
         ):
-            has_update = True
+            continue
+        if not manager.push():
+            raise RuntimeError(f"{package_name} 更新已提交，但推送远端失败")
+        has_update = True
 
-    if has_update:
-        write_to_github_output("has_update", "true")
+    write_to_github_output("has_update", "true" if has_update else "false")
 
 
 def main():
