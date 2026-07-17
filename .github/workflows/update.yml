@@ -101,7 +101,6 @@ jobs:
   update-config-sources:
     runs-on: ubuntu-latest
     needs: update-unity-assets
-    if: ${{ needs.update-unity-assets.outputs.has_update == 'true' || inputs.force-update-config }}
 
     steps:
       - name: 检出脚本仓库
