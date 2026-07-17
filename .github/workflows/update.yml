@@ -134,6 +134,8 @@ jobs:
       - name: 运行数据处理
         id: update
         working-directory: ${{ steps.checkout-repo.outputs.repo-path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}
         run: |
           echo "🚀 开始处理数据..."
           uv run update-config-sources ${{ inputs.force-update-config && '--force' || '' }}

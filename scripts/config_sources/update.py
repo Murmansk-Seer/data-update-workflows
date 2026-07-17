@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 from itertools import chain
+import os
 import random
 import sys
 from typing import Any, TypeVar
@@ -15,6 +16,7 @@ from solaris import parse
 
 from scripts.config_sources._download_github_directory import (
     DownloadTask,
+    build_client,
     collect_directory_tasks,
 )
 from scripts.config_sources._swf_handle import (
@@ -303,14 +305,16 @@ class Unity(Platform):
         parsers = parse.import_parser_classes()
         temp_dir = Path("unity_temp")
         temp_dir.mkdir(parents=True, exist_ok=True)
-        tasks = collect_directory_tasks(
-            client=httpx.Client(),
-            owner="SeerAPI",
-            repo="seer-unity-assets",
-            path="newseer/assets/game/configs/bytes",
-            root_path="newseer/assets/game/configs/bytes",
-            ref="main",
-        )
+        token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+        with build_client(token) as client:
+            tasks = collect_directory_tasks(
+                client=client,
+                owner="Murmansk-Seer",
+                repo="seer-unity-assets",
+                path="newseer/assets/game/configs/bytes",
+                root_path="newseer/assets/game/configs/bytes",
+                ref="main",
+            )
         await download_data_async(tasks, output_dir=temp_dir)
         print(f"开始解析 {temp_dir} 中的文件")
         parse.run_all_parser(
