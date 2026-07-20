@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import struct
-from collections.abc import Iterable, Mapping
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Final
 
@@ -258,54 +258,27 @@ def partner_contracts_file_is_current(
     )
 
 
-def _text_asset_bytes(script: object, asset_path: str) -> bytes:
-    if isinstance(script, bytes):
-        return script
-    if isinstance(script, str):
-        return script.encode("utf-8", errors="surrogateescape")
-    raise PartnerContractsError(
-        f"TextAsset {asset_path} has unsupported script type: {type(script).__name__}"
-    )
+def _load_partner_assets(asset_root: Path) -> dict[str, bytes]:
+    """Read the already-extracted official ConfigPackage bytes from the repo.
 
+    ``seer-unity-assets`` intentionally does not commit transient bundle files.
+    Its stable ``newseer/assets`` tree is therefore the authoritative input for
+    derived data, including first-time generation after this parser is added.
+    """
 
-def _load_partner_assets(bundle_paths: Iterable[Path]) -> dict[str, bytes]:
-    try:
-        import UnityPy
-    except ImportError as error:
-        raise RuntimeError(
-            "UnityPy is required to extract official partner contract assets"
-        ) from error
-
-    environment = UnityPy.Environment()
-    loaded_bundle_count = 0
-    for bundle_path in bundle_paths:
-        if not bundle_path.is_file():
-            continue
-        environment.load_file(str(bundle_path))
-        loaded_bundle_count += 1
-    if not loaded_bundle_count:
-        raise PartnerContractsError("No ConfigPackage bundle files were found")
-
-    expected_paths = {
-        PARTNER_ASSET_PATH.lower(): PARTNER_ASSET_PATH,
-        PARTNER_UPGRADE_ASSET_PATH.lower(): PARTNER_UPGRADE_ASSET_PATH,
-    }
     assets: dict[str, bytes] = {}
-    for asset_path, pointer in environment.container.items():
-        normalized_path = str(asset_path).replace("\\", "/").lower()
-        expected_path = expected_paths.get(normalized_path)
-        if expected_path is None:
-            continue
-        if expected_path in assets:
+    missing: list[str] = []
+    for asset_path in (PARTNER_ASSET_PATH, PARTNER_UPGRADE_ASSET_PATH):
+        source_path = asset_root / asset_path
+        try:
+            assets[asset_path] = source_path.read_bytes()
+        except FileNotFoundError:
+            missing.append(asset_path)
+        except OSError as error:
             raise PartnerContractsError(
-                f"ConfigPackage contains duplicate TextAsset: {expected_path}"
-            )
-        asset = pointer.read()
-        assets[expected_path] = _text_asset_bytes(
-            getattr(asset, "m_Script", None), expected_path
-        )
+                f"Unable to read ConfigPackage asset {asset_path}: {error}"
+            ) from error
 
-    missing = [path for path in expected_paths.values() if path not in assets]
     if missing:
         raise PartnerContractsError(
             "ConfigPackage is missing contract assets: " + ", ".join(missing)
@@ -315,13 +288,13 @@ def _load_partner_assets(bundle_paths: Iterable[Path]) -> dict[str, bytes]:
 
 def extract_partner_contracts(
     *,
-    bundle_paths: Iterable[Path],
+    asset_root: Path,
     config_package_version: str,
     output_path: Path,
 ) -> bool:
     """Extract and write canonical contract data, returning whether it changed."""
 
-    assets = _load_partner_assets(bundle_paths)
+    assets = _load_partner_assets(asset_root)
     document = parse_partner_contracts(
         assets[PARTNER_ASSET_PATH],
         assets[PARTNER_UPGRADE_ASSET_PATH],

@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
 import unittest
 
 from scripts.seer_unity_assets.partner_contracts import (
+    PARTNER_ASSET_PATH,
     PARTNER_CONTRACTS_SCHEMA_VERSION,
+    PARTNER_UPGRADE_ASSET_PATH,
     PartnerContractsError,
+    extract_partner_contracts,
     is_partner_contracts_document_current,
     parse_partner_contracts,
 )
@@ -158,6 +164,59 @@ class PartnerContractsTests(unittest.TestCase):
                 b"\x00",
                 config_package_version="test-version",
             )
+
+    def test_extracts_from_the_committed_asset_tree(self) -> None:
+        partner_data = b"".join(
+            (
+                b"\x01",
+                _i32(1),
+                _group(
+                    source_id=1,
+                    key=1,
+                    name="contract",
+                    members=(3142, 3150),
+                    cost=3,
+                    contract_type="1",
+                ),
+            )
+        )
+        upgrade_data = b"".join(
+            (
+                b"\x01",
+                _i32(1),
+                _upgrade(source_id=1, pet_id=3142, skill_ids=("36696",)),
+            )
+        )
+
+        with TemporaryDirectory() as directory:
+            asset_root = Path(directory) / "newseer"
+            for asset_path, content in (
+                (PARTNER_ASSET_PATH, partner_data),
+                (PARTNER_UPGRADE_ASSET_PATH, upgrade_data),
+            ):
+                destination = asset_root / asset_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(content)
+
+            output_path = Path(directory) / "derived" / "partner_contracts.json"
+            self.assertTrue(
+                extract_partner_contracts(
+                    asset_root=asset_root,
+                    config_package_version="test-version",
+                    output_path=output_path,
+                )
+            )
+            self.assertFalse(
+                extract_partner_contracts(
+                    asset_root=asset_root,
+                    config_package_version="test-version",
+                    output_path=output_path,
+                )
+            )
+
+            document = json.loads(output_path.read_text(encoding="utf-8"))
+            self.assertEqual(document["groups"][0]["member_pet_ids"], [3142, 3150])
+            self.assertEqual(document["upgrades"][0]["skill_ids"], ["36696"])
 
 
 if __name__ == "__main__":
