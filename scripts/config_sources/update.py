@@ -1,7 +1,6 @@
 import asyncio
 from abc import ABC, abstractmethod
 import hashlib
-from itertools import chain
 import json
 import os
 from pathlib import Path
@@ -37,10 +36,6 @@ from scripts._common import (
 )
 
 
-HTML5_BASE_URL = "https://seerh5.61.com"
-HTML5_VERSION_CHECK_URL = (
-    f"{HTML5_BASE_URL}/version/version.json?t={random.uniform(0.01, 0.09)}"
-)
 UNITY_VERSION_CHECK_URL = "https://raw.githubusercontent.com/Murmansk-Seer/seer-unity-assets/main/package-manifests/ConfigPackage.json"
 UNITY_PARTNER_CONTRACTS_URL = (
     "https://raw.githubusercontent.com/Murmansk-Seer/seer-unity-assets/main/"
@@ -271,50 +266,6 @@ async def download_data_async(
     print(f"下载完成：{output_dir}, 共下载 {len(tasks)} 个文件")
 
 
-class HTML5(Platform):
-    def __init__(self, work_dir: Path) -> None:
-        super().__init__(work_dir)
-        self._version_json: dict[str, Any] | None = None
-
-    def get_version_json(self) -> dict[str, Any]:
-        if self._version_json is None:
-            self._version_json = get_json_with_retry(HTML5_VERSION_CHECK_URL)
-        return self._version_json
-
-    @override
-    def get_remote_version(self) -> str:
-        return str(self.get_version_json()["version"])
-
-    @override
-    async def get_configs(self) -> None:
-        def build_tasks(
-            tree: dict[str, Any], path_parts: list[str]
-        ) -> list[DownloadTask]:
-            tasks_local: list[DownloadTask] = []
-            for key, value in tree.items():
-                if isinstance(value, dict):
-                    tasks_local.extend(build_tasks(value, path_parts + [key]))
-                elif isinstance(value, str):
-                    effective_dirs = path_parts[1:] if len(path_parts) > 1 else []
-                    path = (
-                        "/".join(chain(effective_dirs, [value]))
-                        if effective_dirs
-                        else value
-                    )
-                    url = httpx.URL(f"{HTML5_BASE_URL}/{path}")
-                    filename = Path(path).with_name(key)
-                    filename = filename.relative_to("resource", "config")
-                    tasks_local.append(DownloadTask(url, filename))
-
-            return tasks_local
-
-        version_json = self.get_version_json()
-        tasks = build_tasks(
-            version_json["files"]["resource"]["config"], ["files", "resource", "config"]
-        )
-        await download_data_async(tasks, output_dir=self.work_dir)
-
-
 class Unity(Platform):
     @override
     def get_remote_version(self) -> str:
@@ -383,15 +334,23 @@ class Unity(Platform):
         )
 
 
+def build_live_platforms(root: Path = Path(".")) -> list[tuple[str, Platform]]:
+    """Return only configuration sources that still receive live game updates."""
+
+    # The H5 mirror is frozen. Keep its historical snapshot in config-sources,
+    # but never make live data updates depend on an endpoint that no longer
+    # receives current game data.
+    return [
+        ("flash", Flash(root / "flash")),
+        ("unity", Unity(root / "unity")),
+    ]
+
+
 async def run(*, force: bool = False) -> None:
     manager = DataRepoManager.from_checkout(".")
     has_update = False
     errors: list[str] = []
-    platforms: list[tuple[str, Platform]] = [
-        ("flash", Flash(Path("flash"))),
-        ("html5", HTML5(Path("html5"))),
-        ("unity", Unity(Path("unity"))),
-    ]
+    platforms = build_live_platforms()
     for name, platform in platforms:
         try:
             try:
