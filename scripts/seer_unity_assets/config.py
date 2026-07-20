@@ -19,6 +19,11 @@ CONFIG: dict[str, PackageConfig] = {
         "extractor_name": "newseer",
         "update_args": [],
         "skip_extract": False,
+        "push_patterns": [
+            "package-manifests/",
+            "newseer/assets/",
+            "newseer/derived/",
+        ],
     },
     "DefaultPackage": {
         "updater_name": "newseer.default",

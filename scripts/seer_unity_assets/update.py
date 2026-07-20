@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from pathlib import Path
 
 import albi0
 
@@ -9,6 +10,11 @@ from scripts._common import (
     write_to_github_output,
 )
 from scripts.seer_unity_assets.config import CONFIG, PackageConfig
+from scripts.seer_unity_assets.partner_contracts import (
+    PARTNER_CONTRACTS_REPO_PATH,
+    extract_partner_contracts,
+    partner_contracts_file_is_current,
+)
 
 
 def get_manifest_path(package_name: str) -> str:
@@ -19,12 +25,18 @@ def get_bundle_path(package_name: str) -> str:
     return f"newseer/assetbundles/{package_name}/*"
 
 
+def get_bundle_directory(repo_path: Path, package_name: str) -> Path:
+    return repo_path / "newseer" / "assetbundles" / package_name
+
+
 async def process_package(
     *,
     package_name: str,
     config: PackageConfig,
+    repo_path: Path,
+    remote_version: str,
     force: bool = False,
-):
+) -> None:
     async with albi0.session():
         await albi0.update_resources(
             config["updater_name"],
@@ -41,6 +53,14 @@ async def process_package(
                 get_bundle_path(package_name),
                 max_workers=2,
             )
+    if package_name == "ConfigPackage":
+        changed = extract_partner_contracts(
+            bundle_paths=get_bundle_directory(repo_path, package_name).glob("**/*"),
+            config_package_version=remote_version,
+            output_path=repo_path / PARTNER_CONTRACTS_REPO_PATH,
+        )
+        status = "updated" if changed else "already current"
+        print(f"Official partner contracts {status}.")
 
 
 def parse_args() -> tuple[bool, str, set[str] | None]:
@@ -89,11 +109,19 @@ async def run(
             continue
 
         remote_version = await albi0.get_remote_version(config["updater_name"])
+        package_force = force
+        if package_name == "ConfigPackage":
+            package_force = package_force or not partner_contracts_file_is_current(
+                Path(repo_path) / PARTNER_CONTRACTS_REPO_PATH,
+                config_package_version=remote_version,
+            )
         print(f"⚙️ 正在更新资源包 {package_name}...")
         await process_package(
             package_name=package_name,
             config=config,
-            force=force,
+            repo_path=Path(repo_path),
+            remote_version=remote_version,
+            force=package_force,
         )
         print(f"✅ 资源包 {package_name} 更新完成")
         if not manager.commit(
