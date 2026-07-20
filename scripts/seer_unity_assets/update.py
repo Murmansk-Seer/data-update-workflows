@@ -47,15 +47,24 @@ async def process_package(
             min_size=config.get("min_size"),
             max_size=config.get("max_size"),
         )
-        if not config.get("skip_extract"):
+        bundle_directory = get_bundle_directory(repo_path, package_name)
+        has_bundle_files = bundle_directory.is_dir() and any(
+            path.is_file() for path in bundle_directory.glob("**/*")
+        )
+        if not config.get("skip_extract") and has_bundle_files:
             await albi0.extract_assets(
                 config["extractor_name"],
                 get_bundle_path(package_name),
                 max_workers=2,
             )
+        elif not config.get("skip_extract"):
+            print(
+                f"No transient {package_name} bundles found; "
+                "using the committed extracted assets."
+            )
     if package_name == "ConfigPackage":
         changed = extract_partner_contracts(
-            bundle_paths=get_bundle_directory(repo_path, package_name).glob("**/*"),
+            asset_root=repo_path / "newseer",
             config_package_version=remote_version,
             output_path=repo_path / PARTNER_CONTRACTS_REPO_PATH,
         )
