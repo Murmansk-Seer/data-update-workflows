@@ -1130,6 +1130,7 @@ dependencies = [
     { name = "gitpython" },
     { name = "pytz" },
     { name = "seerapi-solaris" },
+    { name = "unitypy" },
     { name = "xmltodict" },
 ]
 
@@ -1145,6 +1146,7 @@ requires-dist = [
     { name = "gitpython", specifier = ">=3.1.45" },
     { name = "pytz", specifier = ">=2025.2" },
     { name = "seerapi-solaris" },
+    { name = "unitypy", specifier = ">=1.24.2" },
     { name = "xmltodict", specifier = ">=1.0.2" },
 ]
 

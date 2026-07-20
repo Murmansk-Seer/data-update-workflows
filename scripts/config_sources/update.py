@@ -2,6 +2,7 @@ import asyncio
 from abc import ABC, abstractmethod
 import hashlib
 from itertools import chain
+import json
 import os
 from pathlib import Path
 import random
@@ -25,6 +26,9 @@ from scripts.config_sources._swf_handle import (
     extract_binary_data,
     extract_swf_data,
 )
+from scripts.seer_unity_assets.partner_contracts import (
+    PARTNER_CONTRACTS_SCHEMA_VERSION,
+)
 from scripts._common import (
     DataRepoManager,
     get_current_time_str,
@@ -38,6 +42,10 @@ HTML5_VERSION_CHECK_URL = (
     f"{HTML5_BASE_URL}/version/version.json?t={random.uniform(0.01, 0.09)}"
 )
 UNITY_VERSION_CHECK_URL = "https://raw.githubusercontent.com/Murmansk-Seer/seer-unity-assets/main/package-manifests/ConfigPackage.json"
+UNITY_PARTNER_CONTRACTS_URL = (
+    "https://raw.githubusercontent.com/Murmansk-Seer/seer-unity-assets/main/"
+    "newseer/derived/partner_contracts.json"
+)
 VERSION_REQUEST_TIMEOUT_SECONDS = 30.0
 VERSION_REQUEST_MAX_RETRIES = 4
 
@@ -333,6 +341,45 @@ class Unity(Platform):
             parsers,
             source_dir=temp_dir,
             output_dir=self.work_dir,
+        )
+        contract_source_path = temp_dir / "_derived" / "partner_contracts.json"
+        await download_data_async(
+            [
+                DownloadTask(
+                    httpx.URL(UNITY_PARTNER_CONTRACTS_URL),
+                    contract_source_path.relative_to(temp_dir),
+                )
+            ],
+            output_dir=temp_dir,
+        )
+        if not contract_source_path.is_file():
+            raise RuntimeError(
+                "Official Unity partner contracts were not published by "
+                "seer-unity-assets"
+            )
+        try:
+            contract_document = json.loads(
+                contract_source_path.read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise RuntimeError("Official Unity partner contracts are invalid") from error
+        if (
+            not isinstance(contract_document, dict)
+            or contract_document.get("schema_version")
+            != PARTNER_CONTRACTS_SCHEMA_VERSION
+        ):
+            raise RuntimeError("Official Unity partner contracts use an unsupported schema")
+        contract_source = contract_document.get("source")
+        if not isinstance(contract_source, dict) or (
+            contract_source.get("config_package_version")
+            != self.get_remote_version()
+        ):
+            raise RuntimeError(
+                "Official Unity partner contracts do not match the current "
+                "ConfigPackage version"
+            )
+        (self.work_dir / "partner_contracts.json").write_bytes(
+            contract_source_path.read_bytes()
         )
 
 
