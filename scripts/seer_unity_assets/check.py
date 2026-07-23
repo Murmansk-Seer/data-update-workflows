@@ -4,7 +4,7 @@ import sys
 import albi0
 import httpx
 
-from scripts._common import write_to_github_output
+from scripts._common import retry_call, write_to_github_output
 from scripts.seer_unity_assets.config import CONFIG, UNITY_ASSETS_REPO
 from scripts.seer_unity_assets.partner_contracts import (
     PARTNER_CONTRACTS_REPO_PATH,
@@ -12,14 +12,34 @@ from scripts.seer_unity_assets.partner_contracts import (
 )
 from scripts.seer_unity_assets.update import get_manifest_path
 
+REQUEST_TIMEOUT_SECONDS = 30.0
+REQUEST_MAX_RETRIES = 3
+RETRYABLE_STATUS_CODES = frozenset((408, 429, 500, 502, 503, 504))
+
+
+def get_with_retry(url: str) -> httpx.Response:
+    def request() -> httpx.Response:
+        response = httpx.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
+        if response.status_code in RETRYABLE_STATUS_CODES:
+            response.raise_for_status()
+        return response
+
+    return retry_call(
+        request,
+        max_retries=REQUEST_MAX_RETRIES,
+        base_delay=1.0,
+        max_delay=4.0,
+    )
+
 
 def get_current_version(
     repo_name: str,
     branch: str,
     package_name: str,
 ) -> str:
-    res = httpx.get(
-        f"https://raw.githubusercontent.com/{repo_name}/refs/heads/{branch}/{get_manifest_path(package_name)}"
+    res = get_with_retry(
+        "https://raw.githubusercontent.com/"
+        f"{repo_name}/refs/heads/{branch}/{get_manifest_path(package_name)}"
     )
     try:
         res.raise_for_status()
@@ -33,10 +53,9 @@ def has_current_partner_contracts(
     branch: str,
     config_package_version: str,
 ) -> bool:
-    response = httpx.get(
+    response = get_with_retry(
         "https://raw.githubusercontent.com/"
-        f"{repo_name}/refs/heads/{branch}/{PARTNER_CONTRACTS_REPO_PATH}",
-        timeout=30.0,
+        f"{repo_name}/refs/heads/{branch}/{PARTNER_CONTRACTS_REPO_PATH}"
     )
     if response.status_code == 404:
         return False
