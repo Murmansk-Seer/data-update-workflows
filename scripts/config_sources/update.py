@@ -1,11 +1,14 @@
 import asyncio
 from abc import ABC, abstractmethod
+from dataclasses import asdict, dataclass
 import hashlib
 import json
 import os
 from pathlib import Path
 import random
+import shutil
 import sys
+from tempfile import TemporaryDirectory
 from typing import Any, TypeVar
 import zlib
 
@@ -14,6 +17,8 @@ from typing_extensions import override
 import httpx
 import xmltodict
 from solaris import parse
+from solaris.parse.base import BaseParser
+from solaris.utils import change_workdir
 
 from scripts.config_sources._download_github_directory import (
     DownloadTask,
@@ -43,6 +48,114 @@ UNITY_PARTNER_CONTRACTS_URL = (
 )
 VERSION_REQUEST_TIMEOUT_SECONDS = 30.0
 VERSION_REQUEST_MAX_RETRIES = 4
+UNITY_PARSE_STATUS_FILE_NAME = ".parse-status.json"
+
+
+@dataclass(frozen=True)
+class UnityParserResult:
+    source_filename: str
+    output_filename: str
+    status: str
+    error: str | None = None
+
+
+def _parser_error(parser_cls: type[BaseParser], error: Exception) -> str:
+    return f"{parser_cls.__name__}: {type(error).__name__}: {error}"
+
+
+def parse_unity_configs_incrementally(
+    parser_classes: list[type[BaseParser]],
+    *,
+    source_dir: Path,
+    output_dir: Path,
+    candidate_dir: Path,
+) -> list[UnityParserResult]:
+    """Stage each parser independently and retain the last valid failed output."""
+
+    results: list[UnityParserResult] = []
+    fatal_errors: list[str] = []
+    candidate_dir.mkdir(parents=True, exist_ok=True)
+
+    with change_workdir(source_dir):
+        for parser_cls in parser_classes:
+            parser = parser_cls()
+            source_filename = parser.source_config_filename()
+            output_filename = parser.parsed_config_filename()
+            try:
+                parsed = parser.parse(parser.load_source_config())
+                with change_workdir(candidate_dir):
+                    parser.save_parsed_config(parsed)
+            except Exception as error:  # noqa: BLE001
+                formatted_error = _parser_error(parser_cls, error)
+                previous_output = output_dir / output_filename
+                if previous_output.is_file():
+                    print(
+                        "::warning title=Unity parser retained previous output::"
+                        f"{formatted_error}; keeping {previous_output}"
+                    )
+                    results.append(
+                        UnityParserResult(
+                            source_filename=source_filename,
+                            output_filename=output_filename,
+                            status="retained_previous",
+                            error=formatted_error,
+                        )
+                    )
+                    continue
+                fatal_errors.append(
+                    f"{formatted_error}; no previous {output_filename} is available"
+                )
+                continue
+
+            candidate_output = candidate_dir / output_filename
+            if not candidate_output.is_file():
+                fatal_errors.append(
+                    f"{parser_cls.__name__} did not write {output_filename}"
+                )
+                continue
+            results.append(
+                UnityParserResult(
+                    source_filename=source_filename,
+                    output_filename=output_filename,
+                    status="updated",
+                )
+            )
+
+    if fatal_errors:
+        raise RuntimeError("Unity required parser outputs are unavailable: " + "; ".join(fatal_errors))
+    return results
+
+
+def publish_incremental_unity_outputs(
+    results: list[UnityParserResult],
+    *,
+    candidate_dir: Path,
+    output_dir: Path,
+) -> None:
+    """Promote only validated staged parser outputs after the full pass succeeds."""
+
+    for result in results:
+        if result.status != "updated":
+            continue
+        source = candidate_dir / result.output_filename
+        destination = output_dir / result.output_filename
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, destination)
+
+    retained = [asdict(result) for result in results if result.status == "retained_previous"]
+    status_path = output_dir / UNITY_PARSE_STATUS_FILE_NAME
+    if not retained:
+        status_path.unlink(missing_ok=True)
+        return
+    status_path.write_text(
+        json.dumps(
+            {"schema_version": 1, "retained_previous_outputs": retained},
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def get_json_with_retry(url: str) -> dict[str, Any]:
@@ -274,64 +387,74 @@ class Unity(Platform):
     @override
     async def get_configs(self) -> None:
         parsers = parse.import_parser_classes()
-        temp_dir = Path("unity_temp")
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
-        with build_client(token) as client:
-            tasks = collect_directory_tasks(
-                client=client,
-                owner="Murmansk-Seer",
-                repo="seer-unity-assets",
-                path="newseer/assets/game/configs/bytes",
-                root_path="newseer/assets/game/configs/bytes",
-                ref="main",
-            )
-        await download_data_async(tasks, output_dir=temp_dir)
-        print(f"开始解析 {temp_dir} 中的文件")
-        parse.run_all_parser(
-            parsers,
-            source_dir=temp_dir,
-            output_dir=self.work_dir,
-        )
-        contract_source_path = temp_dir / "_derived" / "partner_contracts.json"
-        await download_data_async(
-            [
-                DownloadTask(
-                    httpx.URL(UNITY_PARTNER_CONTRACTS_URL),
-                    contract_source_path.relative_to(temp_dir),
+        with TemporaryDirectory(prefix="config-sources-unity-") as temporary_directory:
+            temp_dir = Path(temporary_directory)
+            token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
+            with build_client(token) as client:
+                tasks = collect_directory_tasks(
+                    client=client,
+                    owner="Murmansk-Seer",
+                    repo="seer-unity-assets",
+                    path="newseer/assets/game/configs/bytes",
+                    root_path="newseer/assets/game/configs/bytes",
+                    ref="main",
                 )
-            ],
-            output_dir=temp_dir,
-        )
-        if not contract_source_path.is_file():
-            raise RuntimeError(
-                "Official Unity partner contracts were not published by "
-                "seer-unity-assets"
+            await download_data_async(tasks, output_dir=temp_dir)
+            candidate_dir = temp_dir / "parsed"
+            print(f"开始增量解析 {temp_dir} 中的文件")
+            parser_results = parse_unity_configs_incrementally(
+                parsers,
+                source_dir=temp_dir,
+                output_dir=self.work_dir,
+                candidate_dir=candidate_dir,
             )
-        try:
-            contract_document = json.loads(
-                contract_source_path.read_text(encoding="utf-8")
+            contract_source_path = temp_dir / "_derived" / "partner_contracts.json"
+            await download_data_async(
+                [
+                    DownloadTask(
+                        httpx.URL(UNITY_PARTNER_CONTRACTS_URL),
+                        contract_source_path.relative_to(temp_dir),
+                    )
+                ],
+                output_dir=temp_dir,
             )
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise RuntimeError("Official Unity partner contracts are invalid") from error
-        if (
-            not isinstance(contract_document, dict)
-            or contract_document.get("schema_version")
-            != PARTNER_CONTRACTS_SCHEMA_VERSION
-        ):
-            raise RuntimeError("Official Unity partner contracts use an unsupported schema")
-        contract_source = contract_document.get("source")
-        if not isinstance(contract_source, dict) or (
-            contract_source.get("config_package_version")
-            != self.get_remote_version()
-        ):
-            raise RuntimeError(
-                "Official Unity partner contracts do not match the current "
-                "ConfigPackage version"
+            if not contract_source_path.is_file():
+                raise RuntimeError(
+                    "Official Unity partner contracts were not published by "
+                    "seer-unity-assets"
+                )
+            try:
+                contract_document = json.loads(
+                    contract_source_path.read_text(encoding="utf-8")
+                )
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                raise RuntimeError("Official Unity partner contracts are invalid") from error
+            if (
+                not isinstance(contract_document, dict)
+                or contract_document.get("schema_version")
+                != PARTNER_CONTRACTS_SCHEMA_VERSION
+            ):
+                raise RuntimeError(
+                    "Official Unity partner contracts use an unsupported schema"
+                )
+            contract_source = contract_document.get("source")
+            if not isinstance(contract_source, dict) or (
+                contract_source.get("config_package_version")
+                != self.get_remote_version()
+            ):
+                raise RuntimeError(
+                    "Official Unity partner contracts do not match the current "
+                    "ConfigPackage version"
+                )
+
+            publish_incremental_unity_outputs(
+                parser_results,
+                candidate_dir=candidate_dir,
+                output_dir=self.work_dir,
             )
-        (self.work_dir / "partner_contracts.json").write_bytes(
-            contract_source_path.read_bytes()
-        )
+            (self.work_dir / "partner_contracts.json").write_bytes(
+                contract_source_path.read_bytes()
+            )
 
 
 def build_live_platforms(root: Path = Path(".")) -> list[tuple[str, Platform]]:
