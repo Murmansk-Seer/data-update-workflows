@@ -72,6 +72,9 @@ def parse_unity_configs_incrementally(
 ) -> list[UnityParserResult]:
     """Stage each parser independently and retain the last valid failed output."""
 
+    source_dir = source_dir.resolve()
+    output_dir = output_dir.resolve()
+    candidate_dir = candidate_dir.resolve()
     results: list[UnityParserResult] = []
     fatal_errors: list[str] = []
     candidate_dir.mkdir(parents=True, exist_ok=True)
@@ -134,6 +137,8 @@ def publish_incremental_unity_outputs(
 ) -> None:
     """Promote only validated staged parser outputs after the full pass succeeds."""
 
+    candidate_dir = candidate_dir.resolve()
+    output_dir = output_dir.resolve()
     for result in results:
         if result.status != "updated":
             continue
