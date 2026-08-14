@@ -1,0 +1,72 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    - cron: "15 19 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Merge upstream changes
+        id: merge
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/SeerAPI/data-update-workflows.git || \
+            git remote set-url upstream https://github.com/SeerAPI/data-update-workflows.git
+          git fetch upstream main
+
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Fork already contains upstream/main."
+            exit 0
+          fi
+
+          if ! git merge --no-edit upstream/main; then
+            git merge --abort
+            echo "::error::Upstream changes conflict with Murmansk customizations; manual review is required."
+            exit 1
+          fi
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Python
+        if: steps.merge.outputs.changed == 'true'
+        uses: ./.github/actions/setup-environment
+        with:
+          python-version: "3.10"
+          install-dependencies: "true"
+
+      - name: Validate merged scripts and workflows
+        if: steps.merge.outputs.changed == 'true'
+        run: |
+          uv run ruff check scripts
+          uv run python - <<'PY'
+          from pathlib import Path
+
+          import yaml
+
+          for path in Path(".github/workflows").glob("*.yml"):
+              yaml.safe_load(path.read_text(encoding="utf-8"))
+              print(f"validated {path}")
+          PY
+
+      - name: Push verified merge
+        if: steps.merge.outputs.changed == 'true'
+        run: git push origin HEAD:main
