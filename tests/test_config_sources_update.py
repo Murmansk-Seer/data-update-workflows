@@ -4,12 +4,16 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import Mock, patch
 
 from solaris.parse.base import BaseParser
 from solaris.utils import change_workdir
 
 from scripts.config_sources.update import (
+    CLOTH_POS_DEST_FILENAME,
+    CLOTH_POS_RAW_URL,
     UNITY_PARSE_STATUS_FILE_NAME,
+    Unity,
     build_live_platforms,
     parse_unity_configs_incrementally,
     publish_incremental_unity_outputs,
@@ -43,6 +47,22 @@ class _BrokenParser(BaseParser[dict[str, str]]):
 
 
 class ConfigSourcesUpdateTests(unittest.TestCase):
+    @patch("scripts.config_sources.update.retry_call")
+    def test_unity_imports_published_cloth_positions(self, retry_call: Mock) -> None:
+        payload = b'{"position": "preview"}\n'
+        response = Mock(content=payload)
+        retry_call.return_value = response
+
+        with TemporaryDirectory() as temporary_directory:
+            Unity(Path(temporary_directory))._import_cloth_pos()
+            self.assertEqual(
+                (Path(temporary_directory) / CLOTH_POS_DEST_FILENAME).read_bytes(),
+                payload,
+            )
+
+        self.assertEqual(retry_call.call_args.kwargs["url"], CLOTH_POS_RAW_URL)
+        response.raise_for_status.assert_called_once_with()
+
     def test_live_platforms_exclude_frozen_html5_snapshot(self) -> None:
         with TemporaryDirectory() as temporary_directory:
             platforms = build_live_platforms(Path(temporary_directory))

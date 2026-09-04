@@ -46,6 +46,11 @@ UNITY_PARTNER_CONTRACTS_URL = (
     "https://raw.githubusercontent.com/Murmansk-Seer/seer-unity-assets/main/"
     "newseer/derived/partner_contracts.json"
 )
+CLOTH_POS_RAW_URL = (
+    "https://raw.githubusercontent.com/Murmansk-Seer/seer-unity-assets/main/"
+    "newseer/assets/art/ui/assets/item/cloth/prev/config.json"
+)
+CLOTH_POS_DEST_FILENAME = "clothPos.json"
 VERSION_REQUEST_TIMEOUT_SECONDS = 30.0
 VERSION_REQUEST_MAX_RETRIES = 4
 UNITY_PARSE_STATUS_FILE_NAME = ".parse-status.json"
@@ -460,6 +465,24 @@ class Unity(Platform):
             (self.work_dir / "partner_contracts.json").write_bytes(
                 contract_source_path.read_bytes()
             )
+            self._import_cloth_pos()
+
+    def _import_cloth_pos(self) -> None:
+        """Copy the published Unity equipment-position configuration unchanged."""
+
+        response = retry_call(
+            httpx.get,
+            url=CLOTH_POS_RAW_URL,
+            follow_redirects=True,
+            timeout=VERSION_REQUEST_TIMEOUT_SECONDS,
+            max_retries=VERSION_REQUEST_MAX_RETRIES,
+            base_delay=2.0,
+            max_delay=20.0,
+        )
+        response.raise_for_status()
+        destination = self.work_dir / CLOTH_POS_DEST_FILENAME
+        destination.write_bytes(response.content)
+        print(f"✅ 已导入装备位置配置: {destination}")
 
 
 def build_live_platforms(root: Path = Path(".")) -> list[tuple[str, Platform]]:
