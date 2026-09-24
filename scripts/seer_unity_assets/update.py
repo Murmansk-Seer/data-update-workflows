@@ -15,6 +15,7 @@ from scripts.seer_unity_assets.partner_contracts import (
     extract_partner_contracts,
     partner_contracts_file_is_current,
 )
+from scripts.seer_unity_assets.png_validation import validate_changed_pngs
 
 
 def get_manifest_path(package_name: str) -> str:
@@ -133,6 +134,8 @@ async def run(
             force=package_force,
         )
         print(f"✅ 资源包 {package_name} 更新完成")
+        if not config.get("skip_extract"):
+            validate_changed_pngs(Path(repo_path), manager.get_changed_files())
         if not manager.commit(
             f"{package_name}: Update to {remote_version} | Time: {get_current_time_str()}",
             files=get_push_patterns(package_name, config),
