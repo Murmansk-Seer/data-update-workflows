@@ -15,6 +15,7 @@ from scripts.seer_unity_assets.partner_contracts import (
     extract_partner_contracts,
     partner_contracts_file_is_current,
 )
+from scripts.seer_unity_assets.png_validation import validate_changed_pngs
 
 
 def get_manifest_path(package_name: str) -> str:
@@ -52,10 +53,13 @@ async def process_package(
             path.is_file() for path in bundle_directory.glob("**/*")
         )
         if not config.get("skip_extract") and has_bundle_files:
+            # Unity bundles may expose one image as both Sprite and Texture2D.
+            # albi0 writes both to the same PNG path, so parallel exports can
+            # interleave bytes and produce a file with invalid chunk CRCs.
             await albi0.extract_assets(
                 config["extractor_name"],
                 get_bundle_path(package_name),
-                max_workers=2,
+                max_workers=1,
             )
         elif not config.get("skip_extract"):
             print(
@@ -133,6 +137,8 @@ async def run(
             force=package_force,
         )
         print(f"✅ 资源包 {package_name} 更新完成")
+        if not config.get("skip_extract"):
+            validate_changed_pngs(Path(repo_path), manager.get_changed_files())
         if not manager.commit(
             f"{package_name}: Update to {remote_version} | Time: {get_current_time_str()}",
             files=get_push_patterns(package_name, config),
