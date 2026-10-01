@@ -10,6 +10,11 @@ from scripts._common import (
     write_to_github_output,
 )
 from scripts.seer_unity_assets.config import CONFIG, PackageConfig
+from scripts.seer_unity_assets.autocard_chips import (
+    chip_icon_file_is_current,
+    extract_chip_icons,
+    is_chip_bundle,
+)
 from scripts.seer_unity_assets.partner_contracts import (
     PARTNER_CONTRACTS_REPO_PATH,
     extract_partner_contracts,
@@ -53,19 +58,41 @@ async def process_package(
             path.is_file() for path in bundle_directory.glob("**/*")
         )
         if not config.get("skip_extract") and has_bundle_files:
+            chip_bundles = [
+                path for path in bundle_directory.iterdir() if is_chip_bundle(path)
+            ]
+            patterns = (
+                [
+                    str(path)
+                    for path in bundle_directory.iterdir()
+                    if path.is_file() and not is_chip_bundle(path)
+                ]
+                if chip_bundles
+                else [get_bundle_path(package_name)]
+            )
             # Unity bundles may expose one image as both Sprite and Texture2D.
             # albi0 writes both to the same PNG path, so parallel exports can
             # interleave bytes and produce a file with invalid chunk CRCs.
-            await albi0.extract_assets(
-                config["extractor_name"],
-                get_bundle_path(package_name),
-                max_workers=1,
-            )
+            if patterns:
+                await albi0.extract_assets(
+                    config["extractor_name"],
+                    *patterns,
+                    max_workers=1,
+                )
+            for bundle in chip_bundles:
+                count = extract_chip_icons(bundle, repo_path, remote_version)
+                print(f"Official autocard chip icons exported: {count}")
         elif not config.get("skip_extract"):
             print(
                 f"No transient {package_name} bundles found; "
                 "using the committed extracted assets."
             )
+        if (
+            package_name == "DefaultPackage"
+            and "game_ui_autocard.bundle" in config["update_args"]
+            and not chip_icon_file_is_current(repo_path, remote_version)
+        ):
+            raise RuntimeError("DefaultPackage chip icon extraction is incomplete")
     if package_name == "ConfigPackage":
         changed = extract_partner_contracts(
             asset_root=repo_path / "newseer",
@@ -127,6 +154,11 @@ async def run(
             package_force = package_force or not partner_contracts_file_is_current(
                 Path(repo_path) / PARTNER_CONTRACTS_REPO_PATH,
                 config_package_version=remote_version,
+            )
+        if package_name == "DefaultPackage":
+            package_force = package_force or not chip_icon_file_is_current(
+                Path(repo_path),
+                remote_version,
             )
         print(f"⚙️ 正在更新资源包 {package_name}...")
         await process_package(
