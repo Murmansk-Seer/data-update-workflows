@@ -57,8 +57,10 @@ CONFIG: dict[str, PackageConfig] = {
             "*art_autocard_texture_cards*",
             "*art_autocard_texture_roles*",
             "*art_autocard_texture_minipet*",
+            "game_ui_autocard.bundle",
         ],
         "skip_extract": False,
+        "push_patterns": ["package-manifests/", "newseer/assets/", "newseer/derived/"],
     },
     "PetAnimPackage": {
         "updater_name": "newseer.pet",

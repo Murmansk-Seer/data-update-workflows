@@ -2,12 +2,165 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
+from test_chip_recovery import snapshot
+import httpx
 
-from scripts.seer_unity_assets.update import process_package
+from scripts.seer_unity_assets.update import process_package, run
+from scripts.seer_unity_assets.autocard_chips import (
+    CHIP_ICON_DIRECTORY,
+    CHIP_ICON_MANIFEST,
+)
 
 
 class AssetExtractionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_exhausted_normal_downloader_does_not_start_chip_retry_or_extract(
+        self,
+    ):
+        @asynccontextmanager
+        async def session():
+            yield
+
+        manager = Mock()
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch("scripts.seer_unity_assets.update.albi0.load_all_plugins"),
+            patch("scripts.seer_unity_assets.update.albi0.session", session),
+            patch(
+                "scripts.seer_unity_assets.update.albi0.get_remote_version",
+                AsyncMock(return_value="20261116165851"),
+            ),
+            patch(
+                "scripts.seer_unity_assets.update.chip_icon_file_is_current",
+                return_value=False,
+            ),
+            patch(
+                "scripts.seer_unity_assets.update.albi0.update_resources",
+                AsyncMock(side_effect=httpx.ConnectTimeout("three attempts exhausted")),
+            ) as download,
+            patch(
+                "scripts.seer_unity_assets.update.albi0.extract_assets", AsyncMock()
+            ) as extract,
+            patch(
+                "scripts.seer_unity_assets.update.ensure_chip_icons", AsyncMock()
+            ) as recover,
+            patch(
+                "scripts.seer_unity_assets.update.DataRepoManager.from_checkout",
+                return_value=manager,
+            ),
+        ):
+            with self.assertRaises(httpx.ConnectTimeout):
+                await run(repo_path=directory, packages={"DefaultPackage"})
+        download.assert_awaited_once()
+        extract.assert_not_awaited()
+        recover.assert_not_awaited()
+        manager.commit.assert_not_called()
+        manager.push.assert_not_called()
+
+    async def test_chip_recovery_does_not_advance_full_package_or_touch_other_assets(
+        self,
+    ):
+        @asynccontextmanager
+        async def session():
+            yield
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bundles = root / "newseer/assetbundles/DefaultPackage"
+            bundles.mkdir(parents=True)
+            (bundles / "game_ui_autocard").write_bytes(b"test")
+            (bundles / "unrelated").write_bytes(b"test")
+            manager = Mock()
+            manager.get_changed_files.return_value = []
+            manager.commit.return_value = True
+            manager.push.return_value = True
+            with (
+                patch("scripts.seer_unity_assets.update.albi0.load_all_plugins"),
+                patch("scripts.seer_unity_assets.update.albi0.session", session),
+                patch(
+                    "scripts.seer_unity_assets.update.albi0.get_remote_version",
+                    AsyncMock(return_value="v1"),
+                ) as version,
+                patch(
+                    "scripts.seer_unity_assets.update.albi0.update_resources",
+                    AsyncMock(),
+                ) as download,
+                patch(
+                    "scripts.seer_unity_assets.update.albi0.extract_assets", AsyncMock()
+                ) as generic,
+                patch(
+                    "scripts.seer_unity_assets.update.ensure_chip_icons",
+                    AsyncMock(),
+                ) as recover,
+                patch(
+                    "scripts.seer_unity_assets.update.chip_icon_file_is_current",
+                    return_value=True,
+                ),
+                patch(
+                    "scripts.seer_unity_assets.update.DataRepoManager.from_checkout",
+                    return_value=manager,
+                ),
+                patch("scripts.seer_unity_assets.update.write_to_github_output"),
+            ):
+                await run(repo_path=directory, chip_icons_only=True)
+            version.assert_awaited_once_with("newseer.default")
+            download.assert_not_awaited()
+            recover.assert_awaited_once_with(root, "v1")
+            generic.assert_not_awaited()
+            self.assertEqual(
+                manager.commit.call_args.kwargs["files"],
+                [CHIP_ICON_DIRECTORY, CHIP_ICON_MANIFEST],
+            )
+
+    async def test_chip_bundle_uses_atlas_exporter_instead_of_generic_mesh_export(self):
+        @asynccontextmanager
+        async def session():
+            yield
+
+        async def update_resources(updater_name, *args, **kwargs):
+            kwargs["on_remote_manifest"](updater_name, snapshot("v1"))
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bundle_dir = root / "newseer/assetbundles/DefaultPackage"
+            bundle_dir.mkdir(parents=True)
+            bundle = bundle_dir / "game_ui_autocard"
+            bundle.write_bytes(b"test")
+            config = {
+                "updater_name": "newseer.default",
+                "extractor_name": "newseer",
+                "update_args": ["game_ui_autocard.bundle"],
+                "skip_extract": False,
+            }
+            with (
+                patch("scripts.seer_unity_assets.update.albi0.session", session),
+                patch(
+                    "scripts.seer_unity_assets.update.albi0.update_resources",
+                    AsyncMock(side_effect=update_resources),
+                ),
+                patch(
+                    "scripts.seer_unity_assets.update.albi0.extract_assets", AsyncMock()
+                ) as generic,
+                patch(
+                    "scripts.seer_unity_assets.update.ensure_chip_icons",
+                    AsyncMock(),
+                ) as export,
+                patch(
+                    "scripts.seer_unity_assets.update.chip_icon_file_is_current",
+                    return_value=False,
+                ),
+            ):
+                await process_package(
+                    package_name="DefaultPackage",
+                    config=config,
+                    repo_path=root,
+                    remote_version="v1",
+                )
+            generic.assert_not_awaited()
+            export.assert_awaited_once()
+            self.assertEqual(export.call_args.args, (root, "v1"))
+            self.assertEqual(export.call_args.kwargs["manifest_snapshot"].version, "v1")
+
     async def test_extraction_serializes_duplicate_sprite_and_texture_paths(self):
         @asynccontextmanager
         async def session():

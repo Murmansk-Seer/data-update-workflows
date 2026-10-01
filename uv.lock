@@ -13,8 +13,8 @@ wheels = [
 
 [[package]]
 name = "albi0"
-version = "0.6.0"
-source = { registry = "https://pypi.org/simple" }
+version = "0.6.2"
+source = { git = "https://github.com/Murmansk-Seer/albi0.git?rev=6c174d8bac5b6b82f9391827af197be4a9172c6b#6c174d8bac5b6b82f9391827af197be4a9172c6b" }
 dependencies = [
     { name = "aiofiles" },
     { name = "anyio" },
@@ -27,10 +27,6 @@ dependencies = [
     { name = "slpp" },
     { name = "tqdm" },
     { name = "unitypy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/7d/0b/4ccebab2467ce7feac499fedbb43d688d6c95b1456c380c98965e416f9bd/albi0-0.6.0.tar.gz", hash = "sha256:069c2a71dea14f96ff7c015dcf0401077b33752d1825909b50de9fb80f4ccf52", size = 28778, upload-time = "2026-07-01T13:35:06.84Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/29/7d/3d360013ced5b68ac45634fda4ad189fbaf2c15f0d64c1e73763e6c32ed3/albi0-0.6.0-py3-none-any.whl", hash = "sha256:defd9fbbad1aae78b695b12df94c006f7827f3bbe0268494e04661c62df060d8", size = 40282, upload-time = "2026-07-01T13:35:05.134Z" },
 ]
 
 [[package]]
@@ -1142,7 +1138,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "albi0", specifier = ">=0.6.0" },
+    { name = "albi0", git = "https://github.com/Murmansk-Seer/albi0.git?rev=6c174d8bac5b6b82f9391827af197be4a9172c6b" },
     { name = "gitpython", specifier = ">=3.1.45" },
     { name = "pytz", specifier = ">=2025.2" },
     { name = "seerapi-solaris" },
