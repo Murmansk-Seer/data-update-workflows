@@ -11,6 +11,8 @@ from scripts._common import (
 )
 from scripts.seer_unity_assets.config import CONFIG, PackageConfig
 from scripts.seer_unity_assets.autocard_chips import (
+    CHIP_ICON_DIRECTORY,
+    CHIP_ICON_MANIFEST,
     chip_icon_file_is_current,
     extract_chip_icons,
     is_chip_bundle,
@@ -42,12 +44,21 @@ async def process_package(
     repo_path: Path,
     remote_version: str,
     force: bool = False,
+    chip_icons_only: bool = False,
 ) -> None:
     async with albi0.session():
         await albi0.update_resources(
             config["updater_name"],
-            *config["update_args"],
-            manifest_path=get_manifest_path(package_name),
+            *(
+                ["game_ui_autocard.bundle"]
+                if chip_icons_only
+                else config["update_args"]
+            ),
+            manifest_path=(
+                ".cache/autocard-chip-package.json"
+                if chip_icons_only
+                else get_manifest_path(package_name)
+            ),
             timeout=180.0,
             ignore_version=force,
             min_size=config.get("min_size"),
@@ -70,6 +81,8 @@ async def process_package(
                 if chip_bundles
                 else [get_bundle_path(package_name)]
             )
+            if chip_icons_only:
+                patterns = []
             # Unity bundles may expose one image as both Sprite and Texture2D.
             # albi0 writes both to the same PNG path, so parallel exports can
             # interleave bytes and produce a file with invalid chunk CRCs.
@@ -103,7 +116,7 @@ async def process_package(
         print(f"Official partner contracts {status}.")
 
 
-def parse_args() -> tuple[bool, str, set[str] | None]:
+def parse_args() -> tuple[bool, str, set[str] | None, bool]:
     force = "--force" in sys.argv
     repo_path = "."
     packages: set[str] | None = None
@@ -118,7 +131,7 @@ def parse_args() -> tuple[bool, str, set[str] | None]:
             if name.strip()
         }
 
-    return force, repo_path, packages
+    return force, repo_path, packages, "--chip-icons-only" in sys.argv
 
 
 def get_push_patterns(package_name: str, config: PackageConfig) -> list[str]:
@@ -138,6 +151,7 @@ async def run(
     force: bool = False,
     repo_path: str = ".",
     packages: set[str] | None = None,
+    chip_icons_only: bool = False,
 ):
     albi0.load_all_plugins()
 
@@ -145,11 +159,13 @@ async def run(
     has_update = False
 
     for package_name, config in CONFIG.items():
+        if chip_icons_only and package_name != "DefaultPackage":
+            continue
         if packages is not None and package_name not in packages:
             continue
 
         remote_version = await albi0.get_remote_version(config["updater_name"])
-        package_force = force
+        package_force = force or chip_icons_only
         if package_name == "ConfigPackage":
             package_force = package_force or not partner_contracts_file_is_current(
                 Path(repo_path) / PARTNER_CONTRACTS_REPO_PATH,
@@ -167,13 +183,18 @@ async def run(
             repo_path=Path(repo_path),
             remote_version=remote_version,
             force=package_force,
+            chip_icons_only=chip_icons_only,
         )
         print(f"✅ 资源包 {package_name} 更新完成")
         if not config.get("skip_extract"):
             validate_changed_pngs(Path(repo_path), manager.get_changed_files())
         if not manager.commit(
             f"{package_name}: Update to {remote_version} | Time: {get_current_time_str()}",
-            files=get_push_patterns(package_name, config),
+            files=(
+                [CHIP_ICON_DIRECTORY, CHIP_ICON_MANIFEST]
+                if chip_icons_only
+                else get_push_patterns(package_name, config)
+            ),
         ):
             continue
         if not manager.push():
@@ -184,5 +205,12 @@ async def run(
 
 
 def main():
-    force, repo_path, packages = parse_args()
-    asyncio.run(run(force=force, repo_path=repo_path, packages=packages))
+    force, repo_path, packages, chip_icons_only = parse_args()
+    asyncio.run(
+        run(
+            force=force,
+            repo_path=repo_path,
+            packages=packages,
+            chip_icons_only=chip_icons_only,
+        )
+    )
