@@ -6,6 +6,10 @@ import httpx
 
 from scripts._common import retry_call, write_to_github_output
 from scripts.seer_unity_assets.config import CONFIG, PET_ANIM_REPO, UNITY_ASSETS_REPO
+from scripts.seer_unity_assets.autocard_chips import (
+    CHIP_ICON_MANIFEST,
+    chip_icons_are_current,
+)
 from scripts.seer_unity_assets.partner_contracts import (
     PARTNER_CONTRACTS_REPO_PATH,
     is_partner_contracts_document_current,
@@ -70,6 +74,19 @@ def has_current_partner_contracts(
     )
 
 
+def has_current_chip_icons(repo_name: str, branch: str, package_version: str) -> bool:
+    response = get_with_retry(
+        f"https://raw.githubusercontent.com/{repo_name}/refs/heads/{branch}/{CHIP_ICON_MANIFEST}"
+    )
+    if response.status_code == 404:
+        return False
+    response.raise_for_status()
+    try:
+        return chip_icons_are_current(response.json(), package_version)
+    except ValueError:
+        return False
+
+
 async def run(branch: str):
     albi0.load_all_plugins()
 
@@ -82,6 +99,17 @@ async def run(branch: str):
         current_version = get_current_version(target_repo, branch, package_name)
         remote_version = await albi0.get_remote_version(config["updater_name"])
         if current_version == remote_version:
+            if package_name == "DefaultPackage" and not has_current_chip_icons(
+                target_repo,
+                branch,
+                remote_version,
+            ):
+                print(
+                    "DefaultPackage chip icons are missing or stale; requesting regeneration."
+                )
+                need_update = True
+                need_update_main = True
+                continue
             if package_name == "ConfigPackage" and not has_current_partner_contracts(
                 target_repo,
                 branch,

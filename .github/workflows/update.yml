@@ -6,6 +6,11 @@ on:
 
   workflow_dispatch:
     inputs:
+      chip-icons-only:
+        type: boolean
+        description: "Recover only official autocard chip icons without updating other assets"
+        required: false
+        default: false
       force-update-assets:
         type: boolean
         description: "Force seer-unity-assets update (ConfigPackage, DefaultPackage)"
@@ -73,7 +78,7 @@ jobs:
   update-main-assets:
     runs-on: ubuntu-latest
     needs: check-unity-assets
-    if: ${{ needs.check-unity-assets.outputs.need_update_main == 'true' || inputs.force-update-assets }}
+    if: ${{ needs.check-unity-assets.outputs.need_update_main == 'true' || inputs.force-update-assets || inputs.chip-icons-only }}
     outputs:
       has_update: ${{ steps.update-main.outputs.has_update }}
 
@@ -111,12 +116,13 @@ jobs:
           uv run update-seer-assets \
             --repo-path . \
             --packages ConfigPackage,DefaultPackage \
-            ${{ inputs.force-update-assets && '--force' || '' }}
+            ${{ inputs.force-update-assets && '--force' || '' }} \
+            ${{ inputs.chip-icons-only && '--chip-icons-only' || '' }}
 
   update-pet-assets:
     runs-on: ubuntu-latest
     needs: check-unity-assets
-    if: ${{ needs.check-unity-assets.outputs.need_update_pet == 'true' || inputs.force-update-pet-assets }}
+    if: ${{ !inputs.chip-icons-only && (needs.check-unity-assets.outputs.need_update_pet == 'true' || inputs.force-update-pet-assets) }}
     outputs:
       has_update: ${{ steps.update-pet.outputs.has_update }}
 
@@ -165,6 +171,7 @@ jobs:
       - update-pet-assets
     if: >-
       ${{ always() &&
+          !inputs.chip-icons-only &&
           needs.check-unity-assets.result == 'success' &&
           (needs.update-main-assets.result == 'success' || needs.update-main-assets.result == 'skipped') &&
           (needs.update-pet-assets.result == 'success' || needs.update-pet-assets.result == 'skipped') &&
