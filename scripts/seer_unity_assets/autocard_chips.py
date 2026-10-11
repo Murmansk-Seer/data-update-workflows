@@ -40,10 +40,21 @@ def chip_icon_file_is_current(root: Path, package_version: str) -> bool:
         document = json.loads((root / CHIP_ICON_MANIFEST).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return False
-    return chip_icons_are_current(document, package_version) and all(
-        (root / CHIP_ICON_DIRECTORY / f"autocardChip_{value}.png").is_file()
-        for value in document["sprite_ids"]
-    )
+    if not chip_icons_are_current(document, package_version):
+        return False
+    for value in document["sprite_ids"]:
+        try:
+            with Image.open(
+                root / CHIP_ICON_DIRECTORY / f"autocardChip_{value}.png"
+            ) as image:
+                if image.format != "PNG":
+                    return False
+                image.load()
+                if image.convert("RGBA").getchannel("A").getbbox() is None:
+                    return False
+        except (OSError, ValueError):
+            return False
+    return True
 
 
 def atlas_sprite_image(sprite, atlas) -> Image.Image:
@@ -78,7 +89,8 @@ def atlas_sprite_image(sprite, atlas) -> Image.Image:
 
 
 def extract_chip_icons(bundle: Path, root: Path, package_version: str) -> int:
-    env = UnityPy.load(str(bundle))
+    # Loading bytes avoids UnityPy retaining a Windows file handle in staging.
+    env = UnityPy.load(bundle.read_bytes())
     atlas = next(
         (
             obj.read()

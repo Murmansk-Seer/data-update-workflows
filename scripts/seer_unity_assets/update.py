@@ -14,9 +14,9 @@ from scripts.seer_unity_assets.autocard_chips import (
     CHIP_ICON_DIRECTORY,
     CHIP_ICON_MANIFEST,
     chip_icon_file_is_current,
-    extract_chip_icons,
     is_chip_bundle,
 )
+from scripts.seer_unity_assets.chip_recovery import ensure_chip_icons
 from scripts.seer_unity_assets.partner_contracts import (
     PARTNER_CONTRACTS_REPO_PATH,
     extract_partner_contracts,
@@ -46,6 +46,9 @@ async def process_package(
     force: bool = False,
     chip_icons_only: bool = False,
 ) -> None:
+    if chip_icons_only:
+        await ensure_chip_icons(repo_path, remote_version)
+        return
     async with albi0.session():
         await albi0.update_resources(
             config["updater_name"],
@@ -92,9 +95,6 @@ async def process_package(
                     *patterns,
                     max_workers=1,
                 )
-            for bundle in chip_bundles:
-                count = extract_chip_icons(bundle, repo_path, remote_version)
-                print(f"Official autocard chip icons exported: {count}")
         elif not config.get("skip_extract"):
             print(
                 f"No transient {package_name} bundles found; "
@@ -105,7 +105,7 @@ async def process_package(
             and "game_ui_autocard.bundle" in config["update_args"]
             and not chip_icon_file_is_current(repo_path, remote_version)
         ):
-            raise RuntimeError("DefaultPackage chip icon extraction is incomplete")
+            await ensure_chip_icons(repo_path, remote_version)
     if package_name == "ConfigPackage":
         changed = extract_partner_contracts(
             asset_root=repo_path / "newseer",

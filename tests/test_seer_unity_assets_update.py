@@ -44,9 +44,9 @@ class AssetExtractionTests(unittest.IsolatedAsyncioTestCase):
                     "scripts.seer_unity_assets.update.albi0.extract_assets", AsyncMock()
                 ) as generic,
                 patch(
-                    "scripts.seer_unity_assets.update.extract_chip_icons",
-                    return_value=146,
-                ),
+                    "scripts.seer_unity_assets.update.ensure_chip_icons",
+                    AsyncMock(),
+                ) as recover,
                 patch(
                     "scripts.seer_unity_assets.update.chip_icon_file_is_current",
                     return_value=True,
@@ -59,13 +59,8 @@ class AssetExtractionTests(unittest.IsolatedAsyncioTestCase):
             ):
                 await run(repo_path=directory, chip_icons_only=True)
             version.assert_awaited_once_with("newseer.default")
-            self.assertEqual(
-                download.call_args.args, ("newseer.default", "game_ui_autocard.bundle")
-            )
-            self.assertEqual(
-                download.call_args.kwargs["manifest_path"],
-                ".cache/autocard-chip-package.json",
-            )
+            download.assert_not_awaited()
+            recover.assert_awaited_once_with(root, "v1")
             generic.assert_not_awaited()
             self.assertEqual(
                 manager.commit.call_args.kwargs["files"],
@@ -99,12 +94,12 @@ class AssetExtractionTests(unittest.IsolatedAsyncioTestCase):
                     "scripts.seer_unity_assets.update.albi0.extract_assets", AsyncMock()
                 ) as generic,
                 patch(
-                    "scripts.seer_unity_assets.update.extract_chip_icons",
-                    return_value=146,
+                    "scripts.seer_unity_assets.update.ensure_chip_icons",
+                    AsyncMock(),
                 ) as export,
                 patch(
                     "scripts.seer_unity_assets.update.chip_icon_file_is_current",
-                    return_value=True,
+                    return_value=False,
                 ),
             ):
                 await process_package(
@@ -114,7 +109,7 @@ class AssetExtractionTests(unittest.IsolatedAsyncioTestCase):
                     remote_version="v1",
                 )
             generic.assert_not_awaited()
-            export.assert_called_once_with(bundle, root, "v1")
+            export.assert_awaited_once_with(root, "v1")
 
     async def test_extraction_serializes_duplicate_sprite_and_texture_paths(self):
         @asynccontextmanager
