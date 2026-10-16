@@ -130,7 +130,9 @@ def parse_unity_configs_incrementally(
             )
 
     if fatal_errors:
-        raise RuntimeError("Unity required parser outputs are unavailable: " + "; ".join(fatal_errors))
+        raise RuntimeError(
+            "Unity required parser outputs are unavailable: " + "; ".join(fatal_errors)
+        )
     return results
 
 
@@ -152,7 +154,9 @@ def publish_incremental_unity_outputs(
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
 
-    retained = [asdict(result) for result in results if result.status == "retained_previous"]
+    retained = [
+        asdict(result) for result in results if result.status == "retained_previous"
+    ]
     status_path = output_dir / UNITY_PARSE_STATUS_FILE_NAME
     if not retained:
         status_path.unlink(missing_ok=True)
@@ -438,7 +442,9 @@ class Unity(Platform):
                     contract_source_path.read_text(encoding="utf-8")
                 )
             except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-                raise RuntimeError("Official Unity partner contracts are invalid") from error
+                raise RuntimeError(
+                    "Official Unity partner contracts are invalid"
+                ) from error
             if (
                 not isinstance(contract_document, dict)
                 or contract_document.get("schema_version")
@@ -512,6 +518,7 @@ async def run(*, force: bool = False) -> None:
                 print(f"{platform.work_dir} 不存在")
 
             remote_version = platform.get_remote_version()
+            write_to_github_output(f"{name}_version", remote_version)
             if local_version == remote_version and not force:
                 print(f"{platform.work_dir} 已是最新版本")
                 continue
