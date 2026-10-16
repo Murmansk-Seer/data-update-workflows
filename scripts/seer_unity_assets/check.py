@@ -98,6 +98,7 @@ async def run(branch: str):
         target_repo = config.get("target_repo", UNITY_ASSETS_REPO)
         current_version = get_current_version(target_repo, branch, package_name)
         remote_version = await albi0.get_remote_version(config["updater_name"])
+        write_to_github_output(f"{package_name}_version", remote_version)
         if current_version == remote_version:
             if package_name == "DefaultPackage" and not has_current_chip_icons(
                 target_repo,
