@@ -10,6 +10,17 @@ from scripts.seer_unity_assets.check import config_source_is_current
 
 
 class SeerUnityAssetsCheckTests(unittest.TestCase):
+    @patch("scripts._common.time.sleep")
+    @patch("scripts.seer_unity_assets.check.httpx.get")
+    def test_exhausted_version_request_does_not_become_missing_cache(self, get, sleep):
+        request = httpx.Request("GET", "https://test.invalid")
+        get.return_value = httpx.Response(507, request=request)
+        with self.assertRaises(httpx.HTTPStatusError):
+            get_current_version("owner/repo", "main", "ConfigPackage")
+        self.assertEqual(get.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+        self.assertEqual(get.call_args.kwargs["timeout"].connect, 15.0)
+
     @patch("scripts.seer_unity_assets.check.get_with_retry")
     def test_config_retry_is_independent_of_successful_resource_update(self, get):
         request = httpx.Request("GET", "https://test.invalid")
