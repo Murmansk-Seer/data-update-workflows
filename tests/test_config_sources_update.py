@@ -16,7 +16,6 @@ from scripts.config_sources.update import (
     Unity,
     build_live_platforms,
     parse_unity_configs_incrementally,
-    publish_incremental_unity_outputs,
 )
 
 
@@ -83,36 +82,23 @@ class ConfigSourcesUpdateTests(unittest.TestCase):
                 '{"value": "previous"}\n', encoding="utf-8"
             )
 
-            results = parse_unity_configs_incrementally(
-                [_WorkingParser, _BrokenParser],
-                source_dir=source_dir,
-                output_dir=output_dir,
-                candidate_dir=candidate_dir,
-            )
-            publish_incremental_unity_outputs(
-                results,
-                candidate_dir=candidate_dir,
-                output_dir=output_dir,
-            )
-
-            self.assertEqual(
-                [(result.output_filename, result.status) for result in results],
-                [("working.json", "updated"), ("broken.json", "retained_previous")],
-            )
-            self.assertEqual(
-                json.loads((output_dir / "working.json").read_text(encoding="utf-8")),
-                {"value": "new"},
-            )
+            with self.assertRaisesRegex(RuntimeError, "refusing to publish stale"):
+                parse_unity_configs_incrementally(
+                    [_WorkingParser, _BrokenParser],
+                    source_dir=source_dir,
+                    output_dir=output_dir,
+                    candidate_dir=candidate_dir,
+                )
+            self.assertFalse((output_dir / "working.json").exists())
             self.assertEqual(
                 json.loads((output_dir / "broken.json").read_text(encoding="utf-8")),
                 {"value": "previous"},
             )
-            status = json.loads(
-                (output_dir / UNITY_PARSE_STATUS_FILE_NAME).read_text(encoding="utf-8")
-            )
-            self.assertEqual(status["retained_previous_outputs"][0]["output_filename"], "broken.json")
+            self.assertFalse((output_dir / UNITY_PARSE_STATUS_FILE_NAME).exists())
 
-    def test_incremental_unity_parse_resolves_output_before_changing_directory(self) -> None:
+    def test_incremental_unity_parse_resolves_output_before_changing_directory(
+        self,
+    ) -> None:
         with TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             source_dir = root / "source"
@@ -124,15 +110,16 @@ class ConfigSourcesUpdateTests(unittest.TestCase):
                 '{"value": "previous"}\n', encoding="utf-8"
             )
 
-            with change_workdir(root):
-                results = parse_unity_configs_incrementally(
+            with (
+                change_workdir(root),
+                self.assertRaisesRegex(RuntimeError, "refusing to publish stale"),
+            ):
+                parse_unity_configs_incrementally(
                     [_BrokenParser],
                     source_dir=Path("source"),
                     output_dir=Path("output"),
                     candidate_dir=Path("candidate"),
                 )
-
-            self.assertEqual(results[0].status, "retained_previous")
 
     def test_incremental_unity_parse_requires_a_previous_failed_output(self) -> None:
         with TemporaryDirectory() as temporary_directory:
@@ -144,7 +131,9 @@ class ConfigSourcesUpdateTests(unittest.TestCase):
             output_dir.mkdir()
             (source_dir / "broken.bytes").write_bytes(b"\xb4")
 
-            with self.assertRaisesRegex(RuntimeError, "no previous broken.json"):
+            with self.assertRaisesRegex(
+                RuntimeError, "refusing to publish stale broken.json"
+            ):
                 parse_unity_configs_incrementally(
                     [_BrokenParser],
                     source_dir=source_dir,

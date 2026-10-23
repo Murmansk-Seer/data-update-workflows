@@ -264,11 +264,13 @@ P = ParamSpec("P")
 
 
 def retry(
-    max_retries: int = 3,
+    max_retries: int | None = None,
     base_delay: float = 1.0,
     max_delay: float = 60.0,
     backoff_factor: float = 2.0,
     exceptions: tuple[type[Exception], ...] = (httpx.HTTPError,),
+    *,
+    max_attempts: int = 3,
 ):
     """
     指数退避重试装饰器，支持同步和异步函数。
@@ -281,6 +283,10 @@ def retry(
             exceptions: 触发重试的异常类型
     """
 
+    from albi0.utils import resolve_attempts, retryable
+
+    attempts = resolve_attempts(max_attempts, max_retries)
+
     def decorator(func: Callable[P, T]) -> Callable[P, T]:
         if asyncio.iscoroutinefunction(func):
 
@@ -288,12 +294,12 @@ def retry(
             async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
                 delay = base_delay
                 last_exception = None
-                for i in range(max_retries + 1):
+                for i in range(attempts):
                     try:
                         return await func(*args, **kwargs)
                     except exceptions as e:
                         last_exception = e
-                        if i == max_retries:
+                        if not retryable(e) or i == attempts - 1:
                             print(
                                 f"达到最大重试次数 ({max_retries})，最后一次错误: {e}"
                             )
@@ -314,12 +320,12 @@ def retry(
             def sync_wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
                 delay = base_delay
                 last_exception = None
-                for i in range(max_retries + 1):
+                for i in range(attempts):
                     try:
                         return func(*args, **kwargs)
                     except exceptions as e:
                         last_exception = e
-                        if i == max_retries:
+                        if not retryable(e) or i == attempts - 1:
                             print(
                                 f"达到最大重试次数 ({max_retries})，最后一次错误: {e}"
                             )
@@ -341,7 +347,8 @@ def retry(
 def retry_call(
     func: Callable[..., T],
     *args: Any,
-    max_retries: int = 3,
+    max_retries: int | None = None,
+    max_attempts: int = 3,
     base_delay: float = 1.0,
     max_delay: float = 60.0,
     backoff_factor: float = 2.0,
@@ -353,9 +360,20 @@ def retry_call(
     """
     _retry: Any = retry(
         max_retries=max_retries,
+        max_attempts=max_attempts,
         base_delay=base_delay,
         max_delay=max_delay,
         backoff_factor=backoff_factor,
         exceptions=exceptions,
     )
+    if func is httpx.get:
+
+        def request():
+            response = func(
+                *args, **{"timeout": httpx.Timeout(30, connect=15), **kwargs}
+            )
+            response.raise_for_status()
+            return response
+
+        return _retry(request)()
     return _retry(func)(*args, **kwargs)

@@ -1,0 +1,13 @@
+name: Resource pipeline regression tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v7
+      - run: uv run python -m unittest discover -s tests -q
+      - run: uv run ruff check scripts/_common.py scripts/config_sources/update.py scripts/seer_unity_assets/check.py tests/test_network_fail_closed.py tests/test_config_sources_update.py

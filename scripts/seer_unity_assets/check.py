@@ -17,7 +17,7 @@ from scripts.seer_unity_assets.partner_contracts import (
 from scripts.seer_unity_assets.update import get_manifest_path
 
 REQUEST_TIMEOUT_SECONDS = 30.0
-REQUEST_MAX_RETRIES = 3
+REQUEST_MAX_ATTEMPTS = 3
 RETRYABLE_STATUS_CODES = frozenset((408, 429, 500, 502, 503, 504))
 
 
@@ -30,7 +30,7 @@ def get_with_retry(url: str) -> httpx.Response:
 
     return retry_call(
         request,
-        max_retries=REQUEST_MAX_RETRIES,
+        max_attempts=REQUEST_MAX_ATTEMPTS,
         base_delay=1.0,
         max_delay=4.0,
     )

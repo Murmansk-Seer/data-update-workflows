@@ -15,6 +15,7 @@ import zlib
 from typing_extensions import override
 
 import httpx
+import anyio
 import xmltodict
 from solaris import parse
 from solaris.parse.base import BaseParser
@@ -52,7 +53,7 @@ CLOTH_POS_RAW_URL = (
 )
 CLOTH_POS_DEST_FILENAME = "clothPos.json"
 VERSION_REQUEST_TIMEOUT_SECONDS = 30.0
-VERSION_REQUEST_MAX_RETRIES = 4
+VERSION_REQUEST_MAX_ATTEMPTS = 3
 UNITY_PARSE_STATUS_FILE_NAME = ".parse-status.json"
 
 
@@ -75,7 +76,7 @@ def parse_unity_configs_incrementally(
     output_dir: Path,
     candidate_dir: Path,
 ) -> list[UnityParserResult]:
-    """Stage each parser independently and retain the last valid failed output."""
+    """Stage all required outputs; failures never promote stale parser results."""
 
     source_dir = source_dir.resolve()
     output_dir = output_dir.resolve()
@@ -95,23 +96,8 @@ def parse_unity_configs_incrementally(
                     parser.save_parsed_config(parsed)
             except Exception as error:  # noqa: BLE001
                 formatted_error = _parser_error(parser_cls, error)
-                previous_output = output_dir / output_filename
-                if previous_output.is_file():
-                    print(
-                        "::warning title=Unity parser retained previous output::"
-                        f"{formatted_error}; keeping {previous_output}"
-                    )
-                    results.append(
-                        UnityParserResult(
-                            source_filename=source_filename,
-                            output_filename=output_filename,
-                            status="retained_previous",
-                            error=formatted_error,
-                        )
-                    )
-                    continue
                 fatal_errors.append(
-                    f"{formatted_error}; no previous {output_filename} is available"
+                    f"{formatted_error}; refusing to publish stale {output_filename}"
                 )
                 continue
 
@@ -178,7 +164,7 @@ def get_json_with_retry(url: str) -> dict[str, Any]:
         url=url,
         follow_redirects=True,
         timeout=VERSION_REQUEST_TIMEOUT_SECONDS,
-        max_retries=VERSION_REQUEST_MAX_RETRIES,
+        max_attempts=VERSION_REQUEST_MAX_ATTEMPTS,
         base_delay=2.0,
         max_delay=20.0,
     )
@@ -297,7 +283,7 @@ class Flash(Platform):
             httpx.get,
             url="https://seer.61.com/dll/RobotCoreDLL.swf",
             params={"t": random.uniform(0.01, 0.09)},
-            max_retries=3,
+            max_attempts=3,
         )
         response.raise_for_status()
         return response.content
@@ -307,7 +293,7 @@ class Flash(Platform):
             httpx.get,
             url="https://seer.61.com/resource/xml/prexml.swf",
             params={"t": random.uniform(0.01, 0.09)},
-            max_retries=3,
+            max_attempts=3,
         )
         response.raise_for_status()
         return response.content
@@ -362,12 +348,17 @@ async def download_data_async(
     tasks: list[DownloadTask],
     output_dir: Path = Path("."),
     max_concurrency: int = 20,
-    max_retries: int = 2,
+    max_attempts: int = 3,
     **client_kwargs: Any,
 ) -> None:
+    from albi0.utils import resolve_attempts
+
+    max_attempts = resolve_attempts(max_attempts)
     async with (
         asyncio.Semaphore(max_concurrency),
-        httpx.AsyncClient(**client_kwargs) as client,
+        httpx.AsyncClient(
+            **{"timeout": httpx.Timeout(180, connect=15), **client_kwargs}
+        ) as client,
     ):
         for url, filename in tasks:
             file_path = output_dir / filename
@@ -376,17 +367,26 @@ async def download_data_async(
             backoff_seconds = 0.5
             while True:
                 try:
-                    response = await client.get(url)
+                    with anyio.fail_after(180):
+                        response = await client.get(url)
                     response.raise_for_status()
                     file_path.write_bytes(response.content)
                     break
                 except httpx.HTTPStatusError as e:
-                    print(f"{url} 下载失败，状态码：{e.response.status_code}")
-                    break
-                except httpx.HTTPError as e:
+                    if (
+                        e.response.status_code not in (408, 429)
+                        and e.response.status_code < 500
+                    ):
+                        raise
                     attempt += 1
-                    if attempt > max_retries:
-                        raise e
+                    if attempt >= max_attempts:
+                        raise
+                    await asyncio.sleep(backoff_seconds)
+                    backoff_seconds *= 2
+                except (httpx.HTTPError, TimeoutError):
+                    attempt += 1
+                    if attempt >= max_attempts:
+                        raise
                     await asyncio.sleep(backoff_seconds)
                     backoff_seconds *= 2
 
@@ -481,7 +481,7 @@ class Unity(Platform):
             url=CLOTH_POS_RAW_URL,
             follow_redirects=True,
             timeout=VERSION_REQUEST_TIMEOUT_SECONDS,
-            max_retries=VERSION_REQUEST_MAX_RETRIES,
+            max_attempts=VERSION_REQUEST_MAX_ATTEMPTS,
             base_delay=2.0,
             max_delay=20.0,
         )
