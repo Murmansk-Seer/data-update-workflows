@@ -9,6 +9,32 @@ from scripts._common import DataRepoManager
 
 
 class SafePush(unittest.TestCase):
+    def test_selected_output_deletions_are_committed(self):
+        with TemporaryDirectory() as directory, ExitStack() as resources:
+            repo = Repo.init(directory)
+            resources.callback(repo.close)
+            with repo.config_writer() as config:
+                config.set_value("user", "name", "Test")
+                config.set_value("user", "email", "test@example.invalid")
+            status = Path(directory) / "unity/.parse-status.json"
+            status.parent.mkdir()
+            status.write_text("stale")
+            (status.parent / "config.json").write_text("{}")
+            repo.index.add(["unity/.parse-status.json", "unity/config.json"])
+            repo.index.commit("old status")
+            manager = DataRepoManager.from_checkout(directory)
+            resources.callback(manager.repo.close)
+            status.unlink()
+            self.assertTrue(manager.commit("clear validated status", files=["unity"]))
+            self.assertEqual(
+                manager.repo.git.ls_tree("-r", "--name-only", "HEAD"),
+                "unity/config.json",
+            )
+            (Path(directory) / "unrelated").write_text("leave uncommitted")
+            self.assertFalse(
+                manager.commit("must not create empty commit", files=["unity"])
+            )
+
     def test_admin_advance_preserved_and_data_advance_blocks(self):
         for path, allowed in [
             (".github/workflows/test.yml", True),

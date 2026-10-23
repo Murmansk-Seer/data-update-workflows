@@ -122,9 +122,14 @@ class DataRepoManager:
 
         # 添加文件
         if files:
-            self.repo.index.add(files)
+            # index.add does not stage deletions (notably obsolete parse-status).
+            # Restrict --all to the caller's approved output paths.
+            self.repo.git.add("--all", "--", *files)
         else:
             self.repo.git.add(A=True)  # 相当于 git add -A
+
+        if not self.repo.index.diff("HEAD"):
+            return False
 
         # 提交
         try:
