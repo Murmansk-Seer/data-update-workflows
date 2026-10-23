@@ -507,6 +507,7 @@ async def run(*, force: bool = False) -> None:
     manager = DataRepoManager.from_checkout(".")
     has_update = False
     errors: list[str] = []
+    pending = []
     platforms = build_live_platforms()
     for name, platform in platforms:
         try:
@@ -525,23 +526,24 @@ async def run(*, force: bool = False) -> None:
 
             print(f"{platform.work_dir} 更新中...")
             await platform.get_configs()
-            platform.save_remote_version(remote_version)
-            if manager.commit(
-                f"{name}: Update to {remote_version} | Time: {get_current_time_str()}",
-                files=[str(platform.work_dir)],
-            ):
-                has_update = True
+            pending.append((name, platform, remote_version))
         except Exception as exc:  # noqa: BLE001
             error = f"{name}: {type(exc).__name__}: {exc}"
             errors.append(error)
             print(f"❌ {platform.work_dir} 更新失败：{error}")
 
+    if errors:
+        raise RuntimeError("部分配置源更新失败：" + "; ".join(errors))
+    for name, platform, remote_version in pending:
+        platform.save_remote_version(remote_version)
+        if manager.commit(
+            f"{name}: Update to {remote_version} | Time: {get_current_time_str()}",
+            files=[str(platform.work_dir)],
+        ):
+            has_update = True
     if has_update and not manager.push():
         raise RuntimeError("config-sources 更新已提交，但推送远端失败")
     write_to_github_output("has_update", str(has_update).lower())
-
-    if errors:
-        raise RuntimeError("部分配置源更新失败：" + "; ".join(errors))
 
 
 def main() -> None:
