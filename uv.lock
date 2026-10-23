@@ -14,7 +14,7 @@ wheels = [
 [[package]]
 name = "albi0"
 version = "0.6.0"
-source = { registry = "https://pypi.org/simple" }
+source = { git = "https://github.com/Murmansk-Seer/albi0.git?rev=1e166c2430003dd3bc1815e658f1b242b4302066#1e166c2430003dd3bc1815e658f1b242b4302066" }
 dependencies = [
     { name = "aiofiles" },
     { name = "anyio" },
@@ -27,10 +27,6 @@ dependencies = [
     { name = "slpp" },
     { name = "tqdm" },
     { name = "unitypy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/7d/0b/4ccebab2467ce7feac499fedbb43d688d6c95b1456c380c98965e416f9bd/albi0-0.6.0.tar.gz", hash = "sha256:069c2a71dea14f96ff7c015dcf0401077b33752d1825909b50de9fb80f4ccf52", size = 28778, upload-time = "2026-07-01T13:35:06.84Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/29/7d/3d360013ced5b68ac45634fda4ad189fbaf2c15f0d64c1e73763e6c32ed3/albi0-0.6.0-py3-none-any.whl", hash = "sha256:defd9fbbad1aae78b695b12df94c006f7827f3bbe0268494e04661c62df060d8", size = 40282, upload-time = "2026-07-01T13:35:05.134Z" },
 ]
 
 [[package]]
@@ -1129,6 +1125,7 @@ dependencies = [
     { name = "albi0" },
     { name = "gitpython" },
     { name = "pytz" },
+    { name = "seerapi-models" },
     { name = "seerapi-solaris" },
     { name = "unitypy" },
     { name = "xmltodict" },
@@ -1142,10 +1139,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "albi0", specifier = ">=0.6.0" },
+    { name = "albi0", git = "https://github.com/Murmansk-Seer/albi0.git?rev=1e166c2430003dd3bc1815e658f1b242b4302066" },
     { name = "gitpython", specifier = ">=3.1.45" },
     { name = "pytz", specifier = ">=2025.2" },
-    { name = "seerapi-solaris" },
+    { name = "seerapi-models", git = "https://github.com/Murmansk-Seer/seerapi.git?subdirectory=packages%2Fseerapi-models&rev=5e5718719da12da33d62b33f469f550f6e81d260" },
+    { name = "seerapi-solaris", git = "https://github.com/Murmansk-Seer/seerapi.git?subdirectory=packages%2Fsolaris&rev=5e5718719da12da33d62b33f469f550f6e81d260" },
     { name = "unitypy", specifier = ">=1.24.2" },
     { name = "xmltodict", specifier = ">=1.0.2" },
 ]
@@ -1158,21 +1156,17 @@ dev = [
 
 [[package]]
 name = "seerapi-models"
-version = "106.4.0"
-source = { registry = "https://pypi.org/simple" }
+version = "106.12.0"
+source = { git = "https://github.com/Murmansk-Seer/seerapi.git?subdirectory=packages%2Fseerapi-models&rev=5e5718719da12da33d62b33f469f550f6e81d260#5e5718719da12da33d62b33f469f550f6e81d260" }
 dependencies = [
     { name = "pydantic" },
     { name = "sqlmodel" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/20/b8/7a6689953c891543b30ba759d61fc972a16a8ce889693a83169cb28afc02/seerapi_models-106.4.0.tar.gz", hash = "sha256:e99cbac6108b3407b0693ff42699d5ed9f16dd3409ab33b145d932329504d77a", size = 30565, upload-time = "2026-06-09T12:11:53.946Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a6/d1/cc235c95a58375b89bee38b9182b36c2b78ed084b5f9d52e3c220242b8af/seerapi_models-106.4.0-py3-none-any.whl", hash = "sha256:aa1434bae3ba971053193ccaa18e9d4e9f9e3105c3cb8d765c7e64035c304e12", size = 48282, upload-time = "2026-06-09T12:11:52.877Z" },
-]
 
 [[package]]
 name = "seerapi-solaris"
-version = "106.4.5"
-source = { registry = "https://pypi.org/simple" }
+version = "106.12.0"
+source = { git = "https://github.com/Murmansk-Seer/seerapi.git?subdirectory=packages%2Fsolaris&rev=5e5718719da12da33d62b33f469f550f6e81d260#5e5718719da12da33d62b33f469f550f6e81d260" }
 dependencies = [
     { name = "anycrc" },
     { name = "click" },
@@ -1184,10 +1178,6 @@ dependencies = [
     { name = "sqlmodel" },
     { name = "tqdm" },
     { name = "xmltodict" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ab/bd/00b1921d6d2634175970f5b4787f255ab4d8c0177f36a1ab9026639e3aba/seerapi_solaris-106.4.5.tar.gz", hash = "sha256:7f00b8bf98dc824363d0c28b278b903c0faec5c34f447bdfae836145f1205b8d", size = 165004, upload-time = "2026-07-10T05:39:44.216Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/f1/ff/6eeb39fe61f175218df017445eea6858387d9d2c5ffec285e923721ffd0a/seerapi_solaris-106.4.5-py3-none-any.whl", hash = "sha256:f223bd2ddebdc6b5fc9af03a9388a38fd30862b5f3fe540c92e615c53aac5801", size = 325577, upload-time = "2026-07-10T05:39:42.984Z" },
 ]
 
 [[package]]
@@ -1286,16 +1276,16 @@ wheels = [
 
 [[package]]
 name = "sqlmodel"
-version = "0.0.39"
+version = "0.0.48"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pydantic" },
     { name = "sqlalchemy" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/68/ee/22a0559283c3cf6048678e787ed5d4959dcd00dedd8ba4567eeae684eeb1/sqlmodel-0.0.39.tar.gz", hash = "sha256:23d8e50a8d8ee936032ed79c55023a5d618dd6bc3c510bbf4909d1a7a605a570", size = 91057, upload-time = "2026-06-25T13:01:38.475Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/dd/67/b2c0b771c89c023262dd8fb6ba2cdc6a004e5ff75dd5763051b38ccd133a/sqlmodel-0.0.48.tar.gz", hash = "sha256:5582e87e845e23bb1179a7d8b11a4f5e441b4494528a41ee2fe1d129ffe91543", size = 99329, upload-time = "2026-10-06T21:44:36.391Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cf/7d/b9813a582d4eb310be35e1fc7dfaae71207d7b62e9e53be314ebd251b53b/sqlmodel-0.0.39-py3-none-any.whl", hash = "sha256:90ebe92ce5cc11d7fff8dc7cb594790a102333c8fe7c14865254f6fc5c939795", size = 29680, upload-time = "2026-06-25T13:01:37.494Z" },
+    { url = "https://files.pythonhosted.org/packages/4b/76/6f8221eda15f28471c3887e5a75a62cd7338d20ac03e1e78a110a127d61e/sqlmodel-0.0.48-py3-none-any.whl", hash = "sha256:8d389bf735b03a17508e93e888c13a30ef1ddca22dd8e57add12317401e4112e", size = 31468, upload-time = "2026-10-06T21:44:35.326Z" },
 ]
 
 [[package]]

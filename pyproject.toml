@@ -10,6 +10,7 @@ dependencies = [
     "gitpython>=3.1.45",
     "pytz>=2025.2",
     "seerapi-solaris",
+    "seerapi-models>=106.12.0",
     "xmltodict>=1.0.2",
 ]
 
@@ -21,6 +22,11 @@ dev = [
 
 [tool.uv]
 package = true
+
+[tool.uv.sources]
+albi0 = { git = "https://github.com/Murmansk-Seer/albi0.git", rev = "1e166c2430003dd3bc1815e658f1b242b4302066" }
+seerapi-solaris = { git = "https://github.com/Murmansk-Seer/seerapi.git", rev = "5e5718719da12da33d62b33f469f550f6e81d260", subdirectory = "packages/solaris" }
+seerapi-models = { git = "https://github.com/Murmansk-Seer/seerapi.git", rev = "5e5718719da12da33d62b33f469f550f6e81d260", subdirectory = "packages/seerapi-models" }
 
 [build-system]
 requires = ["hatchling"]
