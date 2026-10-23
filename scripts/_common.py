@@ -406,9 +406,13 @@ def retry_call(
     if func is httpx.get:
 
         def request():
-            response = func(
-                *args, **{"timeout": httpx.Timeout(30, connect=15), **kwargs}
-            )
+            request_kwargs = {"timeout": httpx.Timeout(30, connect=15), **kwargs}
+            timeout = request_kwargs["timeout"]
+            if isinstance(timeout, (int, float)):
+                request_kwargs["timeout"] = httpx.Timeout(
+                    timeout, connect=min(15, timeout)
+                )
+            response = func(*args, **request_kwargs)
             response.raise_for_status()
             return response
 
