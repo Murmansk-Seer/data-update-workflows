@@ -6,6 +6,7 @@ from datetime import datetime
 import functools
 from pathlib import Path
 import time
+import subprocess
 from typing import Any, Callable, Optional, ParamSpec, TypeVar
 from git import Repo
 from git.exc import GitCommandError
@@ -40,6 +41,7 @@ class DataRepoManager:
             raise RuntimeError(f"路径不是 Git 仓库：{self.local_path}")
 
         self.repo = Repo(self.local_path)
+        self._base_revision = self.repo.head.commit.hexsha
         print(f"✅ 已打开仓库：{self.local_path}")
         print(f"   当前分支：{self.repo.active_branch.name}")
         print(f"   最新提交：{self.repo.head.commit.hexsha[:8]}")
@@ -153,33 +155,62 @@ class DataRepoManager:
         if not self.repo:
             raise RuntimeError("仓库尚未初始化")
 
-        try:
-            print("⬆️  正在推送到远程仓库...")
+        branch = branch or self.repo.active_branch.name
+        base = getattr(self, "_base_revision", self.repo.head.commit.hexsha)
+        ref = f"refs/remotes/{remote}/{branch}"
 
-            # 获取远程仓库
-            origin = self.repo.remotes[remote]
+        def network_command(*args):
+            subprocess.run(
+                ["git", "-C", str(self.local_path.resolve()), *args],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=180,
+            )
 
-            # 推送
-            if branch:
-                push_info = origin.push(branch)
-            else:
-                push_info = origin.push()
-
-            # 检查推送结果
-            for info in push_info:
-                if info.flags & info.ERROR:
-                    print(f"❌ 推送失败：{info.summary}")
-                    return False
-
-            print("✅ 推送成功")
-            return True
-
-        except GitCommandError as e:
-            print(f"❌ 推送失败：{e}")
-            return False
-        except IndexError:
-            print(f"❌ 远程仓库 '{remote}' 不存在")
-            return False
+        for attempt in range(1, 4):
+            try:
+                network_command("fetch", remote, f"{branch}:{ref}")
+                remote_head = self.repo.commit(ref).hexsha
+                if self.repo.is_ancestor(self.repo.head.commit, remote_head):
+                    return True
+                if not self.repo.is_ancestor(remote_head, self.repo.head.commit):
+                    if not self.repo.is_ancestor(base, remote_head):
+                        raise RuntimeError(
+                            "Remote history changed; candidate must be rebuilt"
+                        )
+                    changed = self.repo.git.diff(
+                        "--name-only", base, remote_head
+                    ).splitlines()
+                    if any(
+                        not (
+                            path.startswith(".github/")
+                            or path in {"AGENTS.md", "README.md", "LICENSE"}
+                        )
+                        for path in changed
+                    ):
+                        raise RuntimeError(
+                            "Remote data changed; candidate must be rebuilt from latest main"
+                        )
+                    # Only administration-only advances can be merged without
+                    # revalidating the resource snapshot. Never rebase data conflicts.
+                    self.repo.git.merge("--no-edit", remote_head)
+                network_command("push", remote, f"HEAD:refs/heads/{branch}")
+                return True
+            except (
+                GitCommandError,
+                subprocess.CalledProcessError,
+                subprocess.TimeoutExpired,
+            ) as error:
+                print(f"Push attempt {attempt}/3 failed: {error}")
+                if self.repo.index.unmerged_blobs():
+                    raise RuntimeError(
+                        "Candidate merge conflicted; refusing publication"
+                    ) from error
+                if attempt == 3:
+                    raise
+                time.sleep(attempt * 2)
+        raise RuntimeError("Unreachable push state")
 
     def commit_and_push(self, message: str, files: Optional[list[str]] = None) -> bool:
         """
