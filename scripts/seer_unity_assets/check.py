@@ -87,17 +87,35 @@ def has_current_chip_icons(repo_name: str, branch: str, package_version: str) ->
         return False
 
 
+def config_source_is_current(version: str, branch: str) -> bool:
+    base = f"https://raw.githubusercontent.com/Murmansk-Seer/config-sources/{branch}/unity/"
+    response = get_with_retry(base + ".version")
+    if response.status_code == 404:
+        return False
+    response.raise_for_status()
+    if response.text.strip() != version:
+        return False
+    status = get_with_retry(base + ".parse-status.json")
+    if status.status_code == 404:
+        return True
+    status.raise_for_status()
+    return not status.json().get("retained_previous_outputs", [])
+
+
 async def run(branch: str):
     albi0.load_all_plugins()
 
     need_update = False
     need_update_main = False
     need_update_pet = False
+    official_config_version = None
 
     for package_name, config in CONFIG.items():
         target_repo = config.get("target_repo", UNITY_ASSETS_REPO)
         current_version = get_current_version(target_repo, branch, package_name)
         remote_version = await albi0.get_remote_version(config["updater_name"])
+        if package_name == "ConfigPackage":
+            official_config_version = remote_version
         write_to_github_output(f"{package_name}_version", remote_version)
         if current_version == remote_version:
             if package_name == "DefaultPackage" and not has_current_chip_icons(
@@ -136,7 +154,13 @@ async def run(branch: str):
         else:
             need_update_main = True
 
-    write_to_github_output("need_update", "true" if need_update else "false")
+    if official_config_version is None:
+        raise RuntimeError("ConfigPackage version was not checked")
+    need_update_config = not config_source_is_current(official_config_version, branch)
+    write_to_github_output("need_update_config", str(need_update_config).lower())
+    write_to_github_output(
+        "need_update", "true" if need_update or need_update_config else "false"
+    )
     write_to_github_output("need_update_main", "true" if need_update_main else "false")
     write_to_github_output("need_update_pet", "true" if need_update_pet else "false")
 

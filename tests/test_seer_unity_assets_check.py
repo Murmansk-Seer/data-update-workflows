@@ -6,9 +6,32 @@ from unittest.mock import Mock, patch
 import httpx
 
 from scripts.seer_unity_assets.check import get_current_version
+from scripts.seer_unity_assets.check import config_source_is_current
 
 
 class SeerUnityAssetsCheckTests(unittest.TestCase):
+    @patch("scripts.seer_unity_assets.check.get_with_retry")
+    def test_config_retry_is_independent_of_successful_resource_update(self, get):
+        request = httpx.Request("GET", "https://test.invalid")
+        get.return_value = httpx.Response(200, request=request, text="older")
+        self.assertFalse(config_source_is_current("new", "main"))
+        get.side_effect = [
+            httpx.Response(200, request=request, text="new"),
+            httpx.Response(404, request=request),
+        ]
+        self.assertTrue(config_source_is_current("new", "main"))
+        get.side_effect = [
+            httpx.Response(200, request=request, text="new"),
+            httpx.Response(
+                200,
+                request=request,
+                json={
+                    "retained_previous_outputs": [{"output_filename": "broken.json"}]
+                },
+            ),
+        ]
+        self.assertFalse(config_source_is_current("new", "main"))
+
     @patch("scripts._common.time.sleep")
     @patch("scripts.seer_unity_assets.check.httpx.get")
     def test_current_version_retries_read_timeout(

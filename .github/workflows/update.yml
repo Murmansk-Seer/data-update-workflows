@@ -52,6 +52,7 @@ jobs:
     outputs:
       need_update_main: ${{ steps.check-update.outputs.need_update_main }}
       need_update_pet: ${{ steps.check-update.outputs.need_update_pet }}
+      need_update_config: ${{ steps.check-update.outputs.need_update_config }}
       config_version: ${{ steps.check-update.outputs.ConfigPackage_version }}
       default_version: ${{ steps.check-update.outputs.DefaultPackage_version }}
       pet_version: ${{ steps.check-update.outputs.PetAnimPackage_version }}
@@ -185,6 +186,7 @@ jobs:
           (needs.update-pet-assets.result == 'success' || needs.update-pet-assets.result == 'skipped') &&
           (needs.update-main-assets.outputs.has_update == 'true' ||
            needs.update-pet-assets.outputs.has_update == 'true' ||
+           needs.check-unity-assets.outputs.need_update_config == 'true' ||
            inputs.force-update-config) }}
 
     steps:
@@ -220,7 +222,7 @@ jobs:
         working-directory: ${{ steps.checkout-repo.outputs.repo-path }}
         env:
           GITHUB_TOKEN: ${{ secrets.PAT }}
-        run: uv run update-config-sources ${{ inputs.force-update-config && '--force' || '' }}
+        run: uv run update-config-sources ${{ (inputs.force-update-config || needs.check-unity-assets.outputs.need_update_config == 'true') && '--force' || '' }}
 
       - name: Dispatch api-data build
         id: dispatch
