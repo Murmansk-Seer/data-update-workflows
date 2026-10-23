@@ -10,5 +10,5 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v7
       - run: uv run python -m unittest discover -s tests -q
-      - run: uv run ruff check scripts/seer_unity_assets/update.py scripts/seer_unity_assets/chip_recovery.py tests/test_chip_recovery.py tests/test_seer_unity_assets_update.py
+      - run: uv run ruff check scripts/_common.py scripts/config_sources/update.py scripts/seer_unity_assets/check.py scripts/seer_unity_assets/update.py scripts/seer_unity_assets/chip_recovery.py tests/test_network_fail_closed.py tests/test_config_sources_update.py tests/test_chip_recovery.py tests/test_seer_unity_assets_update.py
       - run: uv run ruff format --check scripts/seer_unity_assets/update.py scripts/seer_unity_assets/chip_recovery.py tests/test_chip_recovery.py tests/test_seer_unity_assets_update.py
