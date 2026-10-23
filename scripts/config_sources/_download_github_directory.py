@@ -6,9 +6,12 @@ from typing import NamedTuple, Optional
 
 import httpx
 
+from scripts._common import retry_call
+
+
 class DownloadTask(NamedTuple):
-	url: httpx.URL
-	filename: Path
+    url: httpx.URL
+    filename: Path
 
 
 GITHUB_API_ROOT = "https://api.github.com"
@@ -28,7 +31,7 @@ def build_client(token: Optional[str]) -> httpx.Client:
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    timeout = httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0)
+    timeout = httpx.Timeout(30.0, connect=15.0)
     return httpx.Client(headers=headers, timeout=timeout)
 
 
@@ -59,7 +62,10 @@ def _create_task_from_item(item: dict, root_path: Optional[str]) -> DownloadTask
 def handle_rate_limit(response: httpx.Response) -> None:
     """根据响应判断是否触发了速率限制。"""
 
-    if response.status_code == 403 and response.headers.get("X-RateLimit-Remaining") == "0":
+    if (
+        response.status_code == 403
+        and response.headers.get("X-RateLimit-Remaining") == "0"
+    ):
         reset_at = response.headers.get("X-RateLimit-Reset")
         raise GitHubDownloadError(
             "GitHub API 速率限制已耗尽，请稍后再试或提供具有更高额度的令牌。"
@@ -93,7 +99,14 @@ def collect_directory_tasks(
     effective_root = root_path or path
 
     api_url = f"{GITHUB_API_ROOT}/repos/{owner}/{repo}/contents/{path}"
-    response = client.get(api_url, params={"ref": ref})
+
+    def request():
+        response = client.get(api_url, params={"ref": ref})
+        if response.status_code in (408, 429) or response.status_code >= 500:
+            response.raise_for_status()
+        return response
+
+    response = retry_call(request, max_attempts=3)
     if response.status_code == 404:
         raise GitHubDownloadError(
             f"未找到路径：{owner}/{repo}@{ref}:{path}。请检查仓库、分支或目录是否存在。"
