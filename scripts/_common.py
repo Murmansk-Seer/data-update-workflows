@@ -312,7 +312,8 @@ def retry(
     指数退避重试装饰器，支持同步和异步函数。
 
     Args:
-            max_retries: 最大重试次数
+            max_retries: 已弃用；兼容旧入口，总尝试次数仍不超过 3
+            max_attempts: 总尝试次数（含首次），范围 1 到 3
             base_delay: 初始等待时间（秒）
             max_delay: 最大等待时间（秒）
             backoff_factor: 指数退避因子
@@ -337,7 +338,7 @@ def retry(
                         last_exception = e
                         if not retryable(e) or i == attempts - 1:
                             print(
-                                f"达到最大重试次数 ({max_retries})，最后一次错误: {e}"
+                                f"请求终止（已尝试 {i + 1}/{attempts} 次），最后一次错误: {e}"
                             )
                             raise
                         print(
@@ -363,7 +364,7 @@ def retry(
                         last_exception = e
                         if not retryable(e) or i == attempts - 1:
                             print(
-                                f"达到最大重试次数 ({max_retries})，最后一次错误: {e}"
+                                f"请求终止（已尝试 {i + 1}/{attempts} 次），最后一次错误: {e}"
                             )
                             raise
                         print(
