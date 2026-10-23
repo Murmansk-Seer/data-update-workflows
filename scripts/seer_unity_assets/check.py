@@ -18,12 +18,14 @@ from scripts.seer_unity_assets.update import get_manifest_path
 
 REQUEST_TIMEOUT_SECONDS = 30.0
 REQUEST_MAX_ATTEMPTS = 3
-RETRYABLE_STATUS_CODES = frozenset((408, 429, 500, 502, 503, 504))
+RETRYABLE_STATUS_CODES = frozenset((408, 429, *range(500, 600)))
 
 
 def get_with_retry(url: str) -> httpx.Response:
     def request() -> httpx.Response:
-        response = httpx.get(url, timeout=REQUEST_TIMEOUT_SECONDS)
+        response = httpx.get(
+            url, timeout=httpx.Timeout(REQUEST_TIMEOUT_SECONDS, connect=15.0)
+        )
         if response.status_code in RETRYABLE_STATUS_CODES:
             response.raise_for_status()
         return response
@@ -45,11 +47,10 @@ def get_current_version(
         "https://raw.githubusercontent.com/"
         f"{repo_name}/refs/heads/{branch}/{get_manifest_path(package_name)}"
     )
-    try:
-        res.raise_for_status()
-        return res.json()["version"]
-    except httpx.HTTPStatusError:
+    if res.status_code == 404:
         return "0.0.0"
+    res.raise_for_status()
+    return res.json()["version"]
 
 
 def has_current_partner_contracts(
