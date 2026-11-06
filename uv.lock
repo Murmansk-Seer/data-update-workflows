@@ -13,8 +13,8 @@ wheels = [
 
 [[package]]
 name = "albi0"
-version = "0.6.0"
-source = { git = "https://github.com/Murmansk-Seer/albi0.git?rev=1e166c2430003dd3bc1815e658f1b242b4302066#1e166c2430003dd3bc1815e658f1b242b4302066" }
+version = "0.6.1"
+source = { git = "https://github.com/Murmansk-Seer/albi0.git?rev=530c6d802a906fb2f5c890de782e770223334ee5#530c6d802a906fb2f5c890de782e770223334ee5" }
 dependencies = [
     { name = "aiofiles" },
     { name = "anyio" },
@@ -1139,11 +1139,11 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "albi0", git = "https://github.com/Murmansk-Seer/albi0.git?rev=1e166c2430003dd3bc1815e658f1b242b4302066" },
+    { name = "albi0", git = "https://github.com/Murmansk-Seer/albi0.git?rev=530c6d802a906fb2f5c890de782e770223334ee5" },
     { name = "gitpython", specifier = ">=3.1.45" },
     { name = "pytz", specifier = ">=2025.2" },
-    { name = "seerapi-models", git = "https://github.com/Murmansk-Seer/seerapi.git?subdirectory=packages%2Fseerapi-models&rev=5e5718719da12da33d62b33f469f550f6e81d260" },
-    { name = "seerapi-solaris", git = "https://github.com/Murmansk-Seer/seerapi.git?subdirectory=packages%2Fsolaris&rev=5e5718719da12da33d62b33f469f550f6e81d260" },
+    { name = "seerapi-models", git = "https://github.com/Murmansk-Seer/seerapi.git?subdirectory=packages%2Fseerapi-models&rev=3df3db546a36d1bed6e31fbdf3a2d5f514c3ff8e" },
+    { name = "seerapi-solaris", git = "https://github.com/Murmansk-Seer/seerapi.git?subdirectory=packages%2Fsolaris&rev=3df3db546a36d1bed6e31fbdf3a2d5f514c3ff8e" },
     { name = "unitypy", specifier = ">=1.24.2" },
     { name = "xmltodict", specifier = ">=1.0.2" },
 ]
@@ -1157,7 +1157,7 @@ dev = [
 [[package]]
 name = "seerapi-models"
 version = "106.12.0"
-source = { git = "https://github.com/Murmansk-Seer/seerapi.git?subdirectory=packages%2Fseerapi-models&rev=5e5718719da12da33d62b33f469f550f6e81d260#5e5718719da12da33d62b33f469f550f6e81d260" }
+source = { git = "https://github.com/Murmansk-Seer/seerapi.git?subdirectory=packages%2Fseerapi-models&rev=3df3db546a36d1bed6e31fbdf3a2d5f514c3ff8e#3df3db546a36d1bed6e31fbdf3a2d5f514c3ff8e" }
 dependencies = [
     { name = "pydantic" },
     { name = "sqlmodel" },
@@ -1165,8 +1165,8 @@ dependencies = [
 
 [[package]]
 name = "seerapi-solaris"
-version = "106.12.0"
-source = { git = "https://github.com/Murmansk-Seer/seerapi.git?subdirectory=packages%2Fsolaris&rev=5e5718719da12da33d62b33f469f550f6e81d260#5e5718719da12da33d62b33f469f550f6e81d260" }
+version = "106.12.1"
+source = { git = "https://github.com/Murmansk-Seer/seerapi.git?subdirectory=packages%2Fsolaris&rev=3df3db546a36d1bed6e31fbdf3a2d5f514c3ff8e#3df3db546a36d1bed6e31fbdf3a2d5f514c3ff8e" }
 dependencies = [
     { name = "anycrc" },
     { name = "click" },
