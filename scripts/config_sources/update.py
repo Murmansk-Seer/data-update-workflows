@@ -2,10 +2,12 @@ import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 import hashlib
+from importlib.metadata import distribution
 import json
 import os
 from pathlib import Path
 import random
+import re
 import shutil
 import sys
 from tempfile import TemporaryDirectory
@@ -18,6 +20,7 @@ import httpx
 import anyio
 import xmltodict
 from solaris import parse
+from seerapi_models.somua import SOMUA_RESOURCES
 from solaris.parse.base import BaseParser
 from solaris.utils import change_workdir
 
@@ -55,6 +58,37 @@ CLOTH_POS_DEST_FILENAME = "clothPos.json"
 VERSION_REQUEST_TIMEOUT_SECONDS = 30.0
 VERSION_REQUEST_MAX_ATTEMPTS = 3
 UNITY_PARSE_STATUS_FILE_NAME = ".parse-status.json"
+
+
+UNITY_PARSER_REVISION_FILE_NAME = ".parser-revision"
+SOMUA_VERSION_FILE_NAME = ".somua-version"
+
+
+def get_installed_parser_revision() -> str:
+    """Require both production packages to identify the same immutable source."""
+    revisions: list[str] = []
+    for package in ("seerapi-solaris", "seerapi-models"):
+        receipt = distribution(package).read_text("direct_url.json")
+        if receipt is None:
+            raise RuntimeError(f"{package} has no immutable Git source receipt")
+        try:
+            value = json.loads(receipt)
+            vcs = value["vcs_info"]
+            revision = vcs["commit_id"]
+        except (ValueError, KeyError, TypeError) as error:
+            raise RuntimeError(
+                f"{package} has an invalid Git source receipt"
+            ) from error
+        if (
+            vcs.get("vcs") != "git"
+            or not isinstance(revision, str)
+            or not re.fullmatch(r"[0-9a-f]{40}", revision)
+        ):
+            raise RuntimeError(f"{package} requires a complete Git commit SHA")
+        revisions.append(revision)
+    if revisions[0] != revisions[1]:
+        raise RuntimeError("Solaris and models must use the same Git commit SHA")
+    return revisions[0]
 
 
 @dataclass(frozen=True)
@@ -270,6 +304,9 @@ class Platform(ABC):
     def save_remote_version(self, remote_version: str) -> None:
         self.version_file_path.write_text(remote_version)
 
+    def requires_parser_refresh(self) -> bool:
+        return False
+
 
 class Flash(Platform):
     @staticmethod
@@ -395,12 +432,41 @@ async def download_data_async(
 
 class Unity(Platform):
     @override
+    def requires_parser_refresh(self) -> bool:
+        revision = get_installed_parser_revision()
+        path = self.work_dir / UNITY_PARSER_REVISION_FILE_NAME
+        somua_version = self.work_dir / SOMUA_VERSION_FILE_NAME
+        try:
+            return (
+                path.read_text(encoding="utf-8").strip() != revision
+                or somua_version.read_text(encoding="utf-8").strip()
+                != self.get_local_version()
+                or any(not (self.work_dir / name).is_file() for name in SOMUA_RESOURCES)
+            )
+        except FileNotFoundError:
+            return True
+
+    @override
+    def save_remote_version(self, remote_version: str) -> None:
+        revision = get_installed_parser_revision()
+        super().save_remote_version(remote_version)
+        (self.work_dir / UNITY_PARSER_REVISION_FILE_NAME).write_text(
+            revision + "\n", encoding="utf-8"
+        )
+        (self.work_dir / SOMUA_VERSION_FILE_NAME).write_text(
+            remote_version + "\n", encoding="utf-8"
+        )
+
+    @override
     def get_remote_version(self) -> str:
         return str(get_json_with_retry(UNITY_VERSION_CHECK_URL)["version"])
 
     @override
     async def get_configs(self) -> None:
         parsers = parse.import_parser_classes()
+        outputs = {parser.parsed_config_filename() for parser in parsers}
+        if not set(SOMUA_RESOURCES) <= outputs:
+            raise RuntimeError("Installed parsers do not cover all Somua/dango tables")
         with TemporaryDirectory(prefix="config-sources-unity-") as temporary_directory:
             temp_dir = Path(temporary_directory)
             token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
@@ -520,7 +586,8 @@ async def run(*, force: bool = False) -> None:
 
             remote_version = platform.get_remote_version()
             write_to_github_output(f"{name}_version", remote_version)
-            if local_version == remote_version and not force:
+            parser_refresh = platform.requires_parser_refresh()
+            if local_version == remote_version and not force and not parser_refresh:
                 print(f"{platform.work_dir} 已是最新版本")
                 continue
 

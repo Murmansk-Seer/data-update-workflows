@@ -183,11 +183,7 @@ jobs:
           !inputs.chip-icons-only &&
           needs.check-unity-assets.result == 'success' &&
           (needs.update-main-assets.result == 'success' || needs.update-main-assets.result == 'skipped') &&
-          (needs.update-pet-assets.result == 'success' || needs.update-pet-assets.result == 'skipped') &&
-          (needs.update-main-assets.outputs.has_update == 'true' ||
-           needs.update-pet-assets.outputs.has_update == 'true' ||
-           needs.check-unity-assets.outputs.need_update_config == 'true' ||
-           inputs.force-update-config) }}
+          (needs.update-pet-assets.result == 'success' || needs.update-pet-assets.result == 'skipped') }}
 
     steps:
       - name: Check out workflow repository
@@ -244,7 +240,7 @@ jobs:
       failed: ${{ steps.report.outputs.failed }}
     steps:
       - id: report
-        uses: Murmansk-Seer/.github/.github/actions/report-update@dadd404c9c0119e0326e1e4fb8fcdf3ef6330dab
+        uses: Murmansk-Seer/.github/.github/actions/report-update@f83131a6f07754a48611946af1494e3b516b4571
         with:
           jobs: ${{ toJSON(needs) }}
           evidence: '{"updated":${{ needs.update-main-assets.outputs.has_update == ''true'' || needs.update-pet-assets.outputs.has_update == ''true'' || needs.update-config-sources.outputs.has_update == ''true'' }},"config_version":"${{ needs.check-unity-assets.outputs.config_version }}","default_version":"${{ needs.check-unity-assets.outputs.default_version }}","pet_version":"${{ needs.check-unity-assets.outputs.pet_version }}","unity_version":"${{ needs.update-config-sources.outputs.unity_version }}","flash_version":"${{ needs.update-config-sources.outputs.flash_version }}","dispatch":"${{ needs.update-config-sources.outputs.dispatch }}"}'
