@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import Mock, patch
+from scripts.config_sources import update
 
 from solaris.parse.base import BaseParser
 from solaris.utils import change_workdir
@@ -46,6 +48,54 @@ class _BrokenParser(BaseParser[dict[str, str]]):
 
 
 class ConfigSourcesUpdateTests(unittest.TestCase):
+    def test_shared_snapshot_is_deferred_until_commit_gate(self):
+        version, revision = "20261113190033", "a" * 40
+        with TemporaryDirectory() as directory:
+            platform = Unity(Path(directory) / "unity")
+            platform.get_remote_version = Mock(return_value=version)
+
+            async def download(tasks, *, output_dir):
+                (output_dir / "working.bytes").write_bytes(b"new")
+                contract = output_dir / "_derived" / "partner_contracts.json"
+                contract.parent.mkdir(exist_ok=True)
+                contract.write_text(
+                    json.dumps(
+                        {
+                            "schema_version": 1,
+                            "source": {"config_package_version": version},
+                        }
+                    )
+                )
+
+            with (
+                patch.object(
+                    update, "get_installed_parser_revision", return_value=revision
+                ),
+                patch.object(update, "build_client"),
+                patch.object(update, "collect_directory_tasks", return_value=[]),
+                patch.object(update, "download_data_async", side_effect=download),
+                patch.object(
+                    update, "required_unity_sources", return_value={"working.bytes"}
+                ),
+                patch.object(
+                    update, "parse_unity_snapshot", return_value={"working.json": {}}
+                ) as parse_snapshot,
+                patch.object(update, "publish_unity_snapshot") as publish,
+                patch.object(platform, "_get_cloth_pos", return_value=b"{}"),
+            ):
+                asyncio.run(platform.get_configs())
+                parse_snapshot.assert_called_once_with({"working.bytes": b"new"})
+                publish.assert_not_called()
+                self.assertFalse(platform.version_file_path.exists())
+                platform.save_remote_version(version)
+                publish.assert_called_once()
+                self.assertEqual(publish.call_args.kwargs["version"], version)
+                self.assertEqual(publish.call_args.kwargs["parser_revision"], revision)
+                self.assertEqual(
+                    set(publish.call_args.kwargs["extra_files"]),
+                    {"partner_contracts.json", "clothPos.json"},
+                )
+
     @patch("scripts.config_sources.update.retry_call")
     def test_unity_imports_published_cloth_positions(self, retry_call: Mock) -> None:
         payload = b'{"position": "preview"}\n'

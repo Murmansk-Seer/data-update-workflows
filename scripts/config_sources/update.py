@@ -19,9 +19,13 @@ from typing_extensions import override
 import httpx
 import anyio
 import xmltodict
-from solaris import parse
 from seerapi_models.somua import SOMUA_RESOURCES
 from solaris.parse.base import BaseParser
+from solaris.parse.snapshot import (
+    parse_unity_snapshot,
+    publish_unity_snapshot,
+    required_unity_sources,
+)
 from solaris.utils import change_workdir
 
 from scripts.config_sources._download_github_directory import (
@@ -449,13 +453,24 @@ class Unity(Platform):
     @override
     def save_remote_version(self, remote_version: str) -> None:
         revision = get_installed_parser_revision()
-        super().save_remote_version(remote_version)
-        (self.work_dir / UNITY_PARSER_REVISION_FILE_NAME).write_text(
-            revision + "\n", encoding="utf-8"
+        pending = getattr(self, "_pending_snapshot", None)
+        if pending is None:
+            raise RuntimeError(
+                "Unity snapshot commit gate: no validated complete candidate"
+            )
+        version, candidate_revision, snapshot, extras = pending
+        if version != remote_version or candidate_revision != revision:
+            raise RuntimeError(
+                f"Unity snapshot commit gate: candidate version={version!r}, revision={candidate_revision!r}; expected version={remote_version!r}, revision={revision!r}"
+            )
+        publish_unity_snapshot(
+            snapshot,
+            self.work_dir,
+            version=version,
+            parser_revision=revision,
+            extra_files=extras,
         )
-        (self.work_dir / SOMUA_VERSION_FILE_NAME).write_text(
-            remote_version + "\n", encoding="utf-8"
-        )
+        del self._pending_snapshot
 
     @override
     def get_remote_version(self) -> str:
@@ -463,10 +478,9 @@ class Unity(Platform):
 
     @override
     async def get_configs(self) -> None:
-        parsers = parse.import_parser_classes()
-        outputs = {parser.parsed_config_filename() for parser in parsers}
-        if not set(SOMUA_RESOURCES) <= outputs:
-            raise RuntimeError("Installed parsers do not cover all Somua/dango tables")
+        self._pending_snapshot = None
+        version = self.get_remote_version()
+        revision = get_installed_parser_revision()
         with TemporaryDirectory(prefix="config-sources-unity-") as temporary_directory:
             temp_dir = Path(temporary_directory)
             token = os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN")
@@ -480,14 +494,12 @@ class Unity(Platform):
                     ref="main",
                 )
             await download_data_async(tasks, output_dir=temp_dir)
-            candidate_dir = temp_dir / "parsed"
-            print(f"开始增量解析 {temp_dir} 中的文件")
-            parser_results = parse_unity_configs_incrementally(
-                parsers,
-                source_dir=temp_dir,
-                output_dir=self.work_dir,
-                candidate_dir=candidate_dir,
-            )
+            print(f"完整解析当前官方 Unity 快照：{version}")
+            assets = {
+                name: (temp_dir / name).read_bytes()
+                for name in required_unity_sources()
+            }
+            snapshot = parse_unity_snapshot(assets)
             contract_source_path = temp_dir / "_derived" / "partner_contracts.json"
             await download_data_async(
                 [
@@ -521,26 +533,36 @@ class Unity(Platform):
                 )
             contract_source = contract_document.get("source")
             if not isinstance(contract_source, dict) or (
-                contract_source.get("config_package_version")
-                != self.get_remote_version()
+                contract_source.get("config_package_version") != version
             ):
                 raise RuntimeError(
                     "Official Unity partner contracts do not match the current "
                     "ConfigPackage version"
                 )
 
-            publish_incremental_unity_outputs(
-                parser_results,
-                candidate_dir=candidate_dir,
-                output_dir=self.work_dir,
+            cloth = self._get_cloth_pos()
+            actual_version = self.get_remote_version()
+            if actual_version != version:
+                raise RuntimeError(
+                    f"Unity snapshot source changed during export: actual={actual_version!r}, expected={version!r}"
+                )
+            self._pending_snapshot = (
+                version,
+                revision,
+                snapshot,
+                {
+                    "partner_contracts.json": contract_source_path.read_bytes(),
+                    CLOTH_POS_DEST_FILENAME: cloth,
+                },
             )
-            (self.work_dir / "partner_contracts.json").write_bytes(
-                contract_source_path.read_bytes()
-            )
-            self._import_cloth_pos()
 
     def _import_cloth_pos(self) -> None:
         """Copy the published Unity equipment-position configuration unchanged."""
+        destination = self.work_dir / CLOTH_POS_DEST_FILENAME
+        destination.write_bytes(self._get_cloth_pos())
+        print(f"✅ 已导入装备位置配置: {destination}")
+
+    def _get_cloth_pos(self) -> bytes:
 
         response = retry_call(
             httpx.get,
@@ -552,9 +574,8 @@ class Unity(Platform):
             max_delay=20.0,
         )
         response.raise_for_status()
-        destination = self.work_dir / CLOTH_POS_DEST_FILENAME
-        destination.write_bytes(response.content)
-        print(f"✅ 已导入装备位置配置: {destination}")
+        json.loads(response.content)
+        return response.content
 
 
 def build_live_platforms(root: Path = Path(".")) -> list[tuple[str, Platform]]:

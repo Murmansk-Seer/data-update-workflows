@@ -87,6 +87,18 @@ class ParserRevisionTests(unittest.TestCase):
             platform.get_configs = AsyncMock(
                 side_effect=RuntimeError("bad parser") if fail else None
             )
+
+            # The mocked exporter has no actual snapshot. Simulate its promotion
+            # only at the post-validation commit phase, never during collection.
+            def promote(version):
+                (platform.work_dir / update.UNITY_PARSER_REVISION_FILE_NAME).write_text(
+                    installed + "\n"
+                )
+                (platform.work_dir / update.SOMUA_VERSION_FILE_NAME).write_text(
+                    version + "\n"
+                )
+
+            platform.save_remote_version = Mock(side_effect=promote)
             platforms = [("unity", platform)]
             if other_fail:
                 other = update.Unity(root / "other")
@@ -143,7 +155,9 @@ class ParserRevisionTests(unittest.TestCase):
     def test_migration_reexports_once_and_then_is_noop(self):
         old = "bb29e761b498c3307d756f941b43ee9613385341"
         new = "e32336876474d80fef625b60004f304366175cf0"
-        with patch.object(update, "distribution", side_effect=self._receipts((new, new))):
+        with patch.object(
+            update, "distribution", side_effect=self._receipts((new, new))
+        ):
             self.assertEqual(update.get_installed_parser_revision(), new)
         self.assertEqual(self._run(marker=old, installed=new), (1, 1, new + "\n"))
         self.assertEqual(self._run(marker=new, installed=new), (0, 0, new))
@@ -166,6 +180,21 @@ class ParserRevisionTests(unittest.TestCase):
 
     def test_parse_failure_never_advances_marker_or_commits(self):
         self._run(fail=True)
+
+    def test_version_cannot_advance_without_a_validated_full_snapshot(self):
+        with (
+            TemporaryDirectory() as directory,
+            patch.object(
+                update, "get_installed_parser_revision", return_value=REVISION
+            ),
+        ):
+            platform = update.Unity(Path(directory))
+            platform.version_file_path.write_text("old")
+            with self.assertRaisesRegex(
+                RuntimeError, "no validated complete candidate"
+            ):
+                platform.save_remote_version(VERSION)
+            self.assertEqual(platform.version_file_path.read_text(), "old")
 
     def test_other_platform_failure_never_advances_marker_or_commits(self):
         self._run(other_fail=True)
