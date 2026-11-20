@@ -25,8 +25,8 @@ package = true
 
 [tool.uv.sources]
 albi0 = { git = "https://github.com/Murmansk-Seer/albi0.git", rev = "6c174d8bac5b6b82f9391827af197be4a9172c6b" }
-seerapi-solaris = { git = "https://github.com/Murmansk-Seer/seerapi.git", rev = "bddb5c98a0e8aee615ad39eec36d2c436434a5db", subdirectory = "packages/solaris" }
-seerapi-models = { git = "https://github.com/Murmansk-Seer/seerapi.git", rev = "bddb5c98a0e8aee615ad39eec36d2c436434a5db", subdirectory = "packages/seerapi-models" }
+seerapi-solaris = { git = "https://github.com/Murmansk-Seer/seerapi.git", rev = "90d7707ae38d2c1e27927d587e6375604d4c8bbc", subdirectory = "packages/solaris" }
+seerapi-models = { git = "https://github.com/Murmansk-Seer/seerapi.git", rev = "90d7707ae38d2c1e27927d587e6375604d4c8bbc", subdirectory = "packages/seerapi-models" }
 
 [build-system]
 requires = ["hatchling"]
